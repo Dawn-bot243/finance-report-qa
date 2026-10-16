@@ -1,0 +1,52 @@
+# 阶段一配置：CFQA 前5家试点公司
+companies:
+  - code: "600249"
+    name: "两面针"
+    org_id: "gssh0600249"
+    market: "sse"
+  - code: "688366"
+    name: "昊海生科"
+    org_id: "gssh0688366"
+    market: "sse"
+  - code: "688595"
+    name: "芯海科技"
+    org_id: "gfbj0837517"
+    market: "sse"
+    listed_date: "2020-09-28"
+    note: "2020-09科创板上市，2019无年报，用招股说明书"
+  - code: "688357"
+    name: "建龙微纳"
+    org_id: "gssh0688357"
+    market: "sse"
+  - code: "688608"
+    name: "恒玄科技"
+    org_id: "nssc1000367"
+    market: "sse"
+    listed_date: "2020-12-16"
+    note: "2020-12科创板上市，2019无年报，用招股说明书"
+
+# 财年范围（年报）：FY2019-2022
+fiscal_years: [2019, 2020, 2021, 2022]
+
+# 无年报年份 → 招股书回退（searchkey 候选 + 手工指定 adjunct_url 候选）
+prospectus_fallback:
+  "688595":
+    - "finalpage/2020-09-22/1208465054.PDF"   # 招股说明书
+  "688608":
+    - "finalpage/2020-12-09/1208870808.PDF"   # 招股说明书（注册稿）
+    - "finalpage/2020-11-25/1208793582.PDF"   # 招股意向书（备选，docmap 按命中率定主）
+
+# cninfo 下载参数
+download:
+  delay_seconds: 1.5          # 请求间隔
+  retries: 3                  # 指数退避重试次数
+  timeout: 60
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+  annual_report_category: "category_ndbg_szsh;"
+
+# 质检阈值
+qc:
+  gate2_hit_rate_target: 0.85   # 答案文本命中率目标（空页码条不计入分母）
+  gate4_section2_target: 0.90   # 第二节核心12指标提取率目标
+  gate4_stmt_target: 0.85       # 三大报表核心行提取率目标
+  cross_tolerance: 0.005        # 交叉校验相对误差容差 0.5%

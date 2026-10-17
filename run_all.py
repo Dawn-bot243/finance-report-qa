@@ -70,13 +70,35 @@ def cmd_qc(cfg, args):
     run_all_gates(cfg, sample=args.qc_sample)
 
 
+def cmd_rag(cfg, args):
+    """RAG 子命令：build|ask|eval（args.rag_cmd + args.question）"""
+    from src.rag.indexer import build_index
+    from src.rag.ask import ask as rag_ask, print_answer
+    from src.rag.eval import run_eval
+    if args.rag_cmd == "build":
+        build_index(cfg, force=args.force)
+    elif args.rag_cmd == "ask":
+        if not args.question:
+            raise SystemExit("ask 需要 --question")
+        print_answer(rag_ask(args.question, cfg, verbose=args.verbose))
+    elif args.rag_cmd == "eval":
+        run_eval(cfg, limit=args.eval_limit, skip_judge=args.skip_judge)
+
+
 def main():
     parser = argparse.ArgumentParser(description="财报库阶段一流水线")
-    parser.add_argument("step", choices=["init", "cfqa", "download", "text", "apis", "metrics", "qc", "all"])
+    parser.add_argument("step", choices=["init", "cfqa", "download", "text", "apis", "metrics", "qc",
+                                         "rag", "all"])
     parser.add_argument("--force", action="store_true", help="强制重跑（覆盖已有结果）")
     parser.add_argument("--only", help="只处理指定股票代码")
     parser.add_argument("--list-missing", action="store_true", help="[download] 列出缺失文档")
     parser.add_argument("--qc-sample", type=int, default=20, help="[qc] Gate2 人工抽查条数")
+    parser.add_argument("rag_cmd", nargs="?", choices=["build", "ask", "eval"],
+                        help="[rag] 子命令")
+    parser.add_argument("--question", help="[rag ask] 问题文本")
+    parser.add_argument("--verbose", action="store_true", help="[rag ask] 打印检索详情")
+    parser.add_argument("--eval-limit", type=int, help="[rag eval] 只评估前 N 题")
+    parser.add_argument("--skip-judge", action="store_true", help="[rag eval] 跳过 LLM 判分")
     args = parser.parse_args()
 
     paths.ensure_dirs()
@@ -85,7 +107,8 @@ def main():
     for s in steps:
         log.info(">>> 步骤 %s 开始", s)
         {"init": cmd_init, "cfqa": cmd_cfqa, "download": cmd_download,
-         "text": cmd_text, "apis": cmd_apis, "metrics": cmd_metrics, "qc": cmd_qc}[s](cfg, args)
+         "text": cmd_text, "apis": cmd_apis, "metrics": cmd_metrics,
+         "qc": cmd_qc, "rag": cmd_rag}[s](cfg, args)
         log.info("<<< 步骤 %s 结束", s)
     return 0
 

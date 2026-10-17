@@ -67,31 +67,32 @@ METRIC_DEFS: list[MetricDef] = [
     MetricDef("roe_weighted_deduct_change_pp", "扣非加权ROE增减(百分点)", "growth", "pp", (S2_RATIO,), ("增减幅度",), yoy_of="roe_weighted_deduct"),
 
     # ---- 合并资产负债表 ----
-    MetricDef("current_assets", "流动资产合计", "scale", "currency", (BALANCE,), ("流动资产合计",)),
-    MetricDef("monetary_funds", "货币资金", "scale", "currency", (BALANCE,), ("货币资金",)),
-    MetricDef("accounts_receivable", "应收账款", "scale", "currency", (BALANCE,), ("应收账款",)),
-    MetricDef("inventory", "存货", "scale", "currency", (BALANCE,), ("存货",)),
-    MetricDef("total_liabilities", "负债合计", "solvency", "currency", (BALANCE,), ("负债合计", "负债总计")),
-    MetricDef("current_liabilities", "流动负债合计", "solvency", "currency", (BALANCE,), ("流动负债合计",)),
-    MetricDef("noncurrent_liabilities", "非流动负债合计", "solvency", "currency", (BALANCE,), ("非流动负债合计",)),
-    MetricDef("equity_total", "所有者权益合计", "scale", "currency", (BALANCE,), ("所有者权益合计", "股东权益合计", "归属于母公司所有者权益合计与少数股东权益合计", "所有者权益总计")),
+    MetricDef("current_assets", "流动资产合计", "scale", "currency", (BALANCE, PROSPECTUS), ("流动资产合计",)),
+    MetricDef("monetary_funds", "货币资金", "scale", "currency", (BALANCE, PROSPECTUS), ("货币资金",)),
+    MetricDef("accounts_receivable", "应收账款", "scale", "currency", (BALANCE, PROSPECTUS), ("应收账款",)),
+    MetricDef("inventory", "存货", "scale", "currency", (BALANCE, PROSPECTUS), ("存货",)),
+    MetricDef("total_liabilities", "负债合计", "solvency", "currency", (BALANCE, PROSPECTUS), ("负债合计", "负债总计")),
+    MetricDef("current_liabilities", "流动负债合计", "solvency", "currency", (BALANCE, PROSPECTUS), ("流动负债合计",)),
+    MetricDef("noncurrent_liabilities", "非流动负债合计", "solvency", "currency", (BALANCE, PROSPECTUS), ("非流动负债合计",)),
+    MetricDef("equity_total", "所有者权益合计", "scale", "currency", (BALANCE, PROSPECTUS),
+              ("所有者权益合计", "股东权益合计", "归属于母公司所有者权益合计与少数股东权益合计", "所有者权益总计")),
     MetricDef("asset_liability_ratio", "资产负债率", "solvency", "percent", (BALANCE, S2_RATIO),
               ("资产负债率",)),
 
     # ---- 合并利润表 ----
-    MetricDef("operating_cost", "营业成本", "profitability", "currency", (INCOME,), ("营业成本", "营业总成本")),
-    MetricDef("sales_expense", "销售费用", "profitability", "currency", (INCOME,), ("销售费用",)),
-    MetricDef("admin_expense", "管理费用", "profitability", "currency", (INCOME,), ("管理费用",)),
-    MetricDef("finance_expense", "财务费用", "profitability", "currency", (INCOME,), ("财务费用",)),
-    MetricDef("rd_expense", "研发费用", "profitability", "currency", (INCOME,), ("研发费用",)),
-    MetricDef("operating_profit", "营业利润", "profitability", "currency", (INCOME,), ("营业利润",)),
-    MetricDef("total_profit", "利润总额", "profitability", "currency", (INCOME,), ("利润总额",)),
-    MetricDef("net_profit", "净利润", "profitability", "currency", (INCOME,), ("净利润",)),
+    MetricDef("operating_cost", "营业成本", "profitability", "currency", (INCOME, PROSPECTUS), ("营业成本", "营业总成本")),
+    MetricDef("sales_expense", "销售费用", "profitability", "currency", (INCOME, PROSPECTUS), ("销售费用",)),
+    MetricDef("admin_expense", "管理费用", "profitability", "currency", (INCOME, PROSPECTUS), ("管理费用",)),
+    MetricDef("finance_expense", "财务费用", "profitability", "currency", (INCOME, PROSPECTUS), ("财务费用",)),
+    MetricDef("rd_expense", "研发费用", "profitability", "currency", (INCOME, PROSPECTUS), ("研发费用",)),
+    MetricDef("operating_profit", "营业利润", "profitability", "currency", (INCOME, PROSPECTUS), ("营业利润",)),
+    MetricDef("total_profit", "利润总额", "profitability", "currency", (INCOME, PROSPECTUS), ("利润总额",)),
+    MetricDef("net_profit", "净利润", "profitability", "currency", (INCOME, PROSPECTUS), ("净利润",)),
 
     # ---- 合并现金流量表 ----
-    MetricDef("icf", "投资活动产生的现金流量净额", "cashflow", "currency", (CASHFLOW,),
+    MetricDef("icf", "投资活动产生的现金流量净额", "cashflow", "currency", (CASHFLOW, PROSPECTUS),
               ("投资活动产生的现金流量净额", "投资活动现金流量净额")),
-    MetricDef("fcf", "筹资活动产生的现金流量净额", "cashflow", "currency", (CASHFLOW,),
+    MetricDef("fcf", "筹资活动产生的现金流量净额", "cashflow", "currency", (CASHFLOW, PROSPECTUS),
               ("筹资活动产生的现金流量净额", "筹资活动现金流量净额")),
 
     # ---- API 专用指标（baostock/akshare/datasinking，无 PDF 锚定表）----
@@ -142,5 +143,7 @@ def norm_row_name(s: str) -> str:
     t = re.sub(r"^[一二三四五六七八九十]+[、.．]", "", t)
     # 去末尾括号说明：加权平均净资产收益率（%）/ 基本每股收益（元/股）
     t = re.sub(r"\([^()]{0,12}\)$", "", t)
+    # 去中间固定变体：所有者权益（或股东权益）合计 → 所有者权益合计
+    t = t.replace("（或股东权益）", "").replace("(或股东权益)", "")
     t = t.rstrip("%％")
     return t

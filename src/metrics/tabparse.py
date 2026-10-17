@@ -32,12 +32,14 @@ def _all_text(rows: list[list[str]]) -> str:
 def classify_table(rows: list[list[str]], doc_type: str = "annual_report") -> str | None:
     """表特征分类。顺序敏感：先第二节标志，再三大报表。招股书分类仅限招股书文档
     （年报的年份列头表格不能误判为招股书）。"""
-    text = _all_text(rows)
+    # 去全部空白：单元格内换行会把关键词切成「经营活动产生的现金流量 净额」
+    text = re.sub(r"\s+", "", _all_text(rows))
     head = text[:200]
     if ("主要会计数据" in head or ("营业总收入" in text and "归属于上市公司股东的净利润" in text
                                    and "经营活动产生的现金流量净额" in text and len(rows) <= 12)):
         return S2_DATA
-    if "主要财务指标" in head or "加权平均净资产收益率" in text and "基本每股收益" in text and len(rows) <= 12:
+    if ("主要财务指标" in head or "加权平均净资产收益率" in text and "基本每股收益" in text and len(rows) <= 12
+            or "每股净资产" in text and len(rows) <= 10):
         return S2_RATIO
     if "资产总计" in text and "负债合计" in text:
         return BALANCE
@@ -60,23 +62,50 @@ def _is_header_row(cells: list[str]) -> bool:
 
 
 def stitch_tables(page_tables: list[tuple[int, list[list[str]]]]) -> list[tuple[int, list[list[str]]]]:
-    """跨页拼接断裂表格：下一页首表首行非表头且列数一致 → 续接上一页末表。"""
+    """跨页拼接断裂表格：下一页首表首行非表头且列数一致 → 续接上一页末表。
+    注意：拼接条件是「上一页的下一页」，要跟踪最后合并页而不是起始页
+    （三页连断时 pno == start+2 也必须能续上）。"""
     merged: list[tuple[int, list[list[str]]]] = []
     cur: tuple[int, list[list[str]]] | None = None
+    cur_last = 0
     for pno, rows in page_tables:
         if not rows:
             continue
-        if (cur is not None and pno == cur[0] + 1
+        if (cur is not None and pno == cur_last + 1
                 and not _is_header_row(rows[0])
                 and len(rows[0]) == len(cur[1][0])):
             cur = (cur[0], cur[1] + rows)
+            cur_last = pno
         else:
             if cur is not None:
                 merged.append(cur)
             cur = (pno, rows)
+            cur_last = pno
     if cur is not None:
         merged.append(cur)
     return merged
+
+
+def split_segments(rows: list[list[str]]) -> list[list[list[str]]]:
+    """拼接表中按表头行切分独立报表段：
+    首格为「项目」或含「主要会计数据/主要财务指标」的行开启新段
+    （三张报表在拼接表中首尾相连，各自带「项目|附注」表头）。"""
+    segments: list[list[list[str]]] = []
+    cur: list[list[str]] | None = None
+    for row in rows:
+        first = str(row[0] or "").strip()
+        is_head = (first == "项目"
+                   or "主要会计数据" in first
+                   or "主要财务指标" in first)
+        if is_head:
+            cur = [row]
+            segments.append(cur)
+        elif cur is not None:
+            cur.append(row)
+    # 无表头的单段回退
+    if not segments and rows:
+        return [rows]
+    return segments
 
 
 def detect_columns(rows: list[list[str]], kind: str, fiscal_year: int) -> dict[str, int]:

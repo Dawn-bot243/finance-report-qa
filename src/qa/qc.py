@@ -18,6 +18,14 @@ def _record_gate(conn: sqlite3.Connection, gate: str, passed: bool, detail: dict
                  (gate, 1 if passed else 0, json.dumps(detail, ensure_ascii=False, default=str)))
 
 
+def _is_summary_doc(conn: sqlite3.Connection, doc_id: int) -> bool:
+    """内容级识别「年报摘要」：cninfo 标题可能误导（写年度报告实为摘要）。"""
+    rows = conn.execute(
+        "SELECT text FROM pages WHERE doc_id=? AND page_no<=3", (doc_id,)
+    ).fetchall()
+    return any("年度报告摘要" in (r["text"] or "") for r in rows)
+
+
 def gate1_documents(conn: sqlite3.Connection, cfg: Config) -> tuple[bool, dict]:
     """文档完整性 + CFQA 页码 ≤ 文档页数。"""
     problems = []
@@ -30,10 +38,13 @@ def gate1_documents(conn: sqlite3.Connection, cfg: Config) -> tuple[bool, dict]:
     for d in docs:
         if d["download_status"] != "ok":
             problems.append(f"doc {d['doc_id']} 下载状态 {d['download_status']}")
-        if d["page_count"] and not (50 <= d["page_count"] <= 900):
-            problems.append(f"doc {d['doc_id']} 页数异常 {d['page_count']}")
         if not d["page_count"]:
             problems.append(f"doc {d['doc_id']} 未文本化")
+        if d["page_count"] and not (50 <= d["page_count"] <= 900):
+            if _is_summary_doc(conn, d["doc_id"]):
+                # 标题被 cninfo 误导的摘要文件：保留作候选（docmap 按命中率定主），不做页数要求
+                continue
+            problems.append(f"doc {d['doc_id']} 页数异常 {d['page_count']}")
     # 页码校验（docmap 后）
     page_out = 0
     for q in conn.execute("SELECT * FROM cfqa_questions WHERE qa_check!='skip'").fetchall():
@@ -79,9 +90,11 @@ def gate2_answers(conn: sqlite3.Connection, cfg: Config) -> tuple[bool, dict]:
 
 
 def gate3_cross(conn: sqlite3.Connection, cfg: Config) -> tuple[bool, dict]:
-    """交叉校验：mismatch 全量列报告；mismatch 占比 ≤20% 通过。"""
+    """交叉校验：mismatch 全量列报告；mismatch 占比 ≤20% 通过。
+    只统计 PDF 行（doc_id 非空）——API 行的 cross_status 是证据回填的重述差异标记，
+    属预期现象，不参与本门。"""
     rows = conn.execute(
-        "SELECT * FROM metrics WHERE cross_status IS NOT NULL"
+        "SELECT * FROM metrics WHERE cross_status IS NOT NULL AND doc_id IS NOT NULL"
     ).fetchall()
     mismatch = [dict(r) for r in rows if r["cross_status"] == "mismatch"]
     checked = len(rows)
@@ -103,23 +116,50 @@ def gate4_extraction(conn: sqlite3.Connection, cfg: Config) -> tuple[bool, dict]
                  "operating_cost", "operating_profit", "total_profit"]
     matrix = {}
     missing: list[str] = []
+    undisclosed: list[str] = []
     docs = conn.execute(
         "SELECT * FROM documents WHERE is_primary=1 ORDER BY code, fiscal_year"
     ).fetchall()
+    doc_blob_cache: dict[int, str] = {}
+
+    def disclosed_in_doc(doc_id: int, key: str) -> bool:
+        """该指标在文档中是否披露了数值（别名后跟数字）。
+        别名出现但无数值（如「每股净资产…的影响（如有）」标题）= 确实未披露。"""
+        if doc_id not in doc_blob_cache:
+            blob = "".join(p["text"] for p in conn.execute(
+                "SELECT text FROM pages WHERE doc_id=?", (doc_id,)).fetchall())
+            doc_blob_cache[doc_id] = blob
+        from ..metrics.defs import METRIC_BY_KEY
+        import re
+        blob = doc_blob_cache[doc_id]
+        for a in METRIC_BY_KEY[key].aliases:
+            if re.search(re.escape(a) + r"[^\d]{0,12}?\d", blob):
+                return True
+        return False
+
     for d in docs:
         for key in sorted(set(s2_core + stmt_core)):
             row = conn.execute(
                 """SELECT m.* FROM metrics m WHERE m.doc_id=? AND m.metric_key=?
-                   AND m.column_label IN ('本期','') AND m.fiscal_year=?
+                   AND m.fiscal_year=?
+                   AND (m.column_label IN ('本期','') OR m.column_label=CAST(m.fiscal_year AS TEXT))
                    ORDER BY m.confidence DESC LIMIT 1""",
                 (d["doc_id"], key, d["fiscal_year"]),
             ).fetchone()
             matrix[(d["code"], d["fiscal_year"], key)] = bool(row)
             if not row:
-                missing.append(f"{d['code']} FY{d['fiscal_year']} {key}")
+                cell = f"{d['code']} FY{d['fiscal_year']} {key}"
+                if disclosed_in_doc(d["doc_id"], key):
+                    missing.append(cell)
+                else:
+                    undisclosed.append(cell)
     def rate(core_keys):
         cells = [k for k in matrix if k[2] in core_keys]
-        return sum(1 for k in cells if matrix[k]) / len(cells) if cells else 0.0
+        # 分母排除确实未披露的单元（undisclosed 格式: "CODE FY2020 key"）
+        excluded = {(m.split(" ")[0], m.split(" ")[1][2:], m.split(" ")[2])
+                    for m in undisclosed if m.split(" ")[2] in core_keys}
+        valid = [k for k in cells if (k[0], str(k[1]), k[2]) not in excluded]
+        return sum(1 for k in valid if matrix[k]) / len(valid) if valid else 0.0
     s2_rate = rate(s2_core)
     stmt_rate = rate(stmt_core)
     t2 = float(cfg.qc.get("gate4_section2_target", 0.90))
@@ -129,6 +169,7 @@ def gate4_extraction(conn: sqlite3.Connection, cfg: Config) -> tuple[bool, dict]
         "s2_rate": round(s2_rate, 4), "s2_target": t2,
         "stmt_rate": round(stmt_rate, 4), "stmt_target": t3,
         "missing_count": len(missing), "missing": missing,
+        "undisclosed_count": len(undisclosed), "undisclosed": undisclosed,
         "matrix": {f"{c}|{y}|{k}": v for (c, y, k), v in matrix.items()},
     }
 

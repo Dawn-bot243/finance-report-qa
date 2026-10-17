@@ -36,7 +36,7 @@ def write_report(conn: sqlite3.Connection, results: dict[str, tuple[bool, dict]]
         elif gate == "gate4":
             lines.append(f"- 第二节核心指标提取率: **{d.get('s2_rate')}** (目标 ≥{d.get('s2_target')})")
             lines.append(f"- 三大报表核心行提取率: **{d.get('stmt_rate')}** (目标 ≥{d.get('stmt_target')})")
-            lines.append(f"- 缺失 {d.get('missing_count')} 项:")
+            lines.append(f"- 算法漏提 {d.get('missing_count')} 项 / 确实未披露 {d.get('undisclosed_count')} 项（后者不计入分母）:")
             for m in d.get("missing", [])[:50]:
                 lines.append(f"  - {m}")
         elif gate == "compare":

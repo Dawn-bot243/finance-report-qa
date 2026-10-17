@@ -13,7 +13,7 @@ from ..store import db
 from .anchor import anchor_rows, parse_number, regex_fallback
 from .defs import (BALANCE, CASHFLOW, INCOME, METRIC_BY_KEY, METRIC_DEFS, PROSPECTUS,
                    S2_DATA, S2_RATIO, MetricDef)
-from .tabparse import ParsedTable, classify_table, clean_table, detect_columns, stitch_tables
+from .tabparse import ParsedTable, classify_table, clean_table, detect_columns, split_segments, stitch_tables
 from .units import pick_unit
 
 log = setup_logging(__name__)
@@ -55,7 +55,8 @@ def _find_stmt_page(pages: list[dict], kind: str) -> int | None:
 
 
 def _page_tables(pages: list[dict], page_nos: set[int]) -> list[tuple[int, list[list[str]]]]:
-    """从 tables_json 还原清洗后的表格。返回 [(page_no, rows)]。"""
+    """从 tables_json 还原清洗后的表格。返回 [(page_no, rows)]。
+    保留单行表（表头孤行，如「主要会计数据」标题行，跨页拼接的前缀）。"""
     out = []
     for p in pages:
         if p["page_no"] not in page_nos or not p["tables_json"]:
@@ -66,7 +67,7 @@ def _page_tables(pages: list[dict], page_nos: set[int]) -> list[tuple[int, list[
             continue
         for t in tabs:
             rows = clean_table(t.get("rows") or [])
-            if len(rows) >= 2:
+            if rows:
                 out.append((p["page_no"], rows))
     return out
 
@@ -177,29 +178,41 @@ def _extract_doc_metrics_inner(conn: sqlite3.Connection, doc: dict) -> dict:
     if s2_start is not None:
         target_pages |= set(range(s2_start, min(s2_start + 8, len(pages) + 1)))
     else:
-        log.warning("doc %d: 未定位第二节，全文搜「主要会计数据」", doc["doc_id"])
+        # 招股书无「第二节公司简介和主要财务指标」，指标表名为「主要财务数据」
+        log.warning("doc %d: 未定位第二节，全文搜「主要会计数据/主要财务数据」", doc["doc_id"])
         for p in pages:
-            if "主要会计数据" in p["text"]:
+            if "主要会计数据" in p["text"] or "主要财务数据" in p["text"]:
                 target_pages |= set(range(max(1, p["page_no"] - 2), p["page_no"] + 6))
                 break
+    # 「每股净资产」分红节表（第二节主要财务指标表通常不含此行）
+    for p in pages:
+        if "每股净资产" in p["text"]:
+            target_pages.add(p["page_no"])
     for kind, word in _STMT_PAT.items():
         sp = _find_stmt_page(pages, kind)
         if sp is not None:
-            target_pages |= {sp, sp + 1}
+            # 报表可能跨 2-3 页
+            target_pages |= set(range(sp, min(sp + 4, len(pages) + 1)))
 
-    # S2-S3：取表、跨页拼接断裂表格、分类
+    # S2-S3：取表、跨页拼接断裂表格、按表头分段、分类
     tables: list[ParsedTable] = []
+    seen_stmt_kinds: set[str] = set()  # 报表类只取首个（合并报表在前，母公司报表在后）
     raw_page_tables = _page_tables(pages, target_pages)
     raw_page_tables.sort(key=lambda x: x[0])
     for page_no, rows in stitch_tables(raw_page_tables):
-        kind = classify_table(rows, doc["doc_type"])
-        if kind is None:
-            continue
-        factor, unit_word, unit_src = pick_unit(rows, pages_by_no.get(page_no, "").split("\n"))
-        col_map = detect_columns(rows, kind, doc["fiscal_year"])
-        tables.append(ParsedTable(page_no=page_no, rows=rows, kind=kind,
-                                  col_map=col_map, unit_factor=factor,
-                                  unit_word=unit_word, unit_source=unit_src))
+        for seg in split_segments(rows):
+            kind = classify_table(seg, doc["doc_type"])
+            if kind is None:
+                continue
+            if kind in (BALANCE, INCOME, CASHFLOW):
+                if kind in seen_stmt_kinds:
+                    continue  # 跳过母公司报表等同类重复表
+                seen_stmt_kinds.add(kind)
+            factor, unit_word, unit_src = pick_unit(seg, pages_by_no.get(page_no, "").split("\n"))
+            col_map = detect_columns(seg, kind, doc["fiscal_year"])
+            tables.append(ParsedTable(page_no=page_no, rows=seg, kind=kind,
+                                      col_map=col_map, unit_factor=factor,
+                                      unit_word=unit_word, unit_source=unit_src))
 
     # 同页同类多表取行数最多
     best: dict[tuple[int, str], ParsedTable] = {}
@@ -212,15 +225,17 @@ def _extract_doc_metrics_inner(conn: sqlite3.Connection, doc: dict) -> dict:
     for t in best.values():
         total += _extract_from_table(conn, doc, pages_by_no, t)
 
-    # S7：正则兜底（仅第二节窗口页，只补 section2 类缺失指标）
-    s2_defs = [m for m in METRIC_DEFS if S2_DATA in m.tables and m.yoy_of is None]
+    # S7：正则兜底（第二节窗口页，补 S2_DATA/S2_RATIO 类缺失指标，
+    # 覆盖 find_tables 检测不到的无边框表，如分红节的每股净资产）
+    s2_defs = [m for m in METRIC_DEFS
+               if (S2_DATA in m.tables or S2_RATIO in m.tables) and m.yoy_of is None]
     have_keys = {
         (r["metric_key"], r["source"]) for r in
         conn.execute("SELECT metric_key, source FROM metrics WHERE doc_id=?", (doc["doc_id"],))
     }
     for pno in sorted(target_pages):
         text = pages_by_no.get(pno, "")
-        for hit in regex_fallback(text, s2_defs, S2_DATA):
+        for hit in regex_fallback(text, s2_defs, None):
             key = (hit["metric_key"], S2_DATA)
             if key in have_keys:
                 continue

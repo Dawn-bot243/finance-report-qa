@@ -41,6 +41,19 @@ python -X utf8 run_all.py all        # 顺序执行全部
 
 常用参数：`--force` 强制重跑、`--only 600249` 只处理某公司、`download --list-missing` 查缺。
 
+## 阶段二：RAG 检索问答（混合检索 + 带出处回答）
+
+```bash
+python -X utf8 run_all.py rag build                 # 建索引：pages→chunks + Chroma 向量 + BM25（幂等增量）
+python -X utf8 run_all.py rag ask --question "两面针2019年营业收入是多少"
+python -X utf8 run_all.py rag eval                  # CFQA 全量评估（检索命中率+数值判分+LLM判分）
+python -X utf8 run_all.py rag eval --eval-limit 20 --skip-judge   # 快速小样本评估
+```
+
+问答链路：**查询分析（公司/年份/指标）→ 结构化直答（metrics 表，as_reported 优先）→ 混合召回（Chroma bge-m3 + jieba BM25 → RRF）→ bge-reranker 重排 → DeepSeek 生成（行内引用【第N页】+ 数值核验）**。证据不足时拒答。
+
+API 依赖（.env）：`DEEPSEEK_API_KEY`（生成/评测）、`SILICONFLOW_API_KEY`（bge-m3 嵌入 + bge-reranker 重排）、`DATASINK_API_KEY`（阶段一用）。
+
 ## 结构化指标的三条来源
 
 按「不用 PDF 硬提表格」原则，结构化指标以 API 为主：

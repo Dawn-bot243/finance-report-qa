@@ -44,20 +44,46 @@ def _lcs_len(a: str, b: str) -> int:
     return best
 
 
+_YEAR_TOKEN = re.compile(r"^(?:19|20)\d\d$")
+_NEGATIVE_ANS = re.compile(r"没有|未披露|无法在年报中|未找到|不存在|无相关|未具体披露")
+
+
+def _num_tokens(answer: str) -> list[str]:
+    """答案中的证据数字（去年份模板噪音、去前导全角逗号、千分位归一）。"""
+    out = []
+    for t in _NUM_TOKEN.findall(answer):
+        t = t.strip("，,、 ")
+        if not t or _YEAR_TOKEN.match(t):
+            continue
+        t = t.replace(",", "").replace("，", "").lstrip("－−")
+        out.append(t)
+    return out
+
+
 def answer_hits_page(answer: str, page_text: str) -> bool:
-    """答案命中判定：
-    - 含数字的答案（财报问答主流）：答案中所有数字 token 需出现在页面（千分位逗号、括号负数容差）
-    - 纯文本答案：最长公共子串 ≥ 12 字
+    """答案命中判定（页面级）：
+    - 含非年份数字：所有数字 token 需出现在页面（千分位逗号、括号负数容差）
+    - 纯文本/只有年份：最长公共子串 ≥12 字（否定类答案降为 ≥6）
     """
-    tokens = _NUM_TOKEN.findall(answer)
+    tokens = _num_tokens(answer)
     if tokens:
         page_digits = re.sub(r"[^\d.％%\-]", "", page_text)
-        for t in tokens:
-            t = t.replace(",", "").replace("，", "").lstrip("－−")
-            if t not in page_digits:
-                return False
-        return True
+        return all(t in page_digits for t in tokens)
+    if _NEGATIVE_ANS.search(answer):
+        # 「没有X」类答案：去掉模板前缀后核心词命中即可
+        core = re.sub(r"^[一-鿿A-Za-z]{2,10}?公司", "", answer)
+        core = re.sub(r"^(?:19|20)\d\d年", "", core)
+        return _lcs_len(norm_answer(core), norm_text(page_text)) >= 6
     return _lcs_len(norm_answer(answer), norm_text(page_text)) >= 12
+
+
+def answer_hits_doc(answer: str, pages: list[dict]) -> bool:
+    """答案命中判定（文档级）：所有证据数字出现在文档任一页。"""
+    tokens = _num_tokens(answer)
+    if not tokens:
+        return False
+    doc_digits = re.sub(r"[^\d.％%\-]", "", "".join(p["text"] for p in pages))
+    return all(t in doc_digits for t in tokens)
 
 
 def map_questions(conn: sqlite3.Connection, cfg: Config) -> dict:
@@ -89,6 +115,9 @@ def map_questions(conn: sqlite3.Connection, cfg: Config) -> dict:
         ans = q["answer"]
         best: dict | None = None
         best_hits, best_score = -1, -1.0
+        best_groups: list[dict] = []
+        best_doc_hit = False
+        best_usable = 0
         for d in cands:
             pages = docs_cache.setdefault(d["doc_id"], conn.execute(
                 "SELECT page_no, text FROM pages WHERE doc_id=?", (d["doc_id"],)
@@ -98,26 +127,35 @@ def map_questions(conn: sqlite3.Connection, cfg: Config) -> dict:
             hits = 0
             usable = 0
             for g in pages_groups:
-                g = [pg for pg in g if pg <= d["page_count"]]
-                if not g:
-                    groups.append({"pages": g, "hit": False})
+                g_valid = [pg for pg in g if pg <= d["page_count"]]
+                if not g_valid:
+                    groups.append({"pages": g_valid, "hit": False})
                     continue
                 usable += 1
-                hit = any(answer_hits_page(ans, text_by_no.get(pg, "")) for pg in g)
+                # 页码组 ±2 页窗口（容忍更正版/原版页序偏移）
+                pg_set = {p for pg in g_valid
+                          for p in range(pg - 2, pg + 3) if p in text_by_no}
+                hit = any(answer_hits_page(ans, text_by_no[p]) for p in pg_set)
                 if hit:
                     hits += 1
-                groups.append({"pages": g, "hit": hit})
+                groups.append({"pages": g_valid, "hit": hit})
+            doc_hit = answer_hits_doc(ans, pages)
             score = hits / usable if usable else 0.0
             if hits > best_hits or (hits == best_hits and score > best_score):
                 best_hits, best_score, best = hits, score, d
-                best_groups = groups
+                best_groups, best_doc_hit, best_usable = groups, doc_hit, usable
         # 同 (code,fiscal_year) 多候选：命中数最多的文档
-        status = "ok" if best_hits == len([g for g in best_groups if g["pages"]]) else (
-            "partial" if best_hits > 0 else "fail")
+        if best_hits == best_usable:
+            status = "ok"
+        elif best_hits > 0 or best_doc_hit:
+            status = "partial"  # 页码级未全命中，但文档级证据存在
+        else:
+            status = "fail"
         conn.execute(
             "UPDATE cfqa_questions SET qa_doc_map=?, qa_check=? WHERE question_id=?",
             (json.dumps({"doc_id": best["doc_id"], "fiscal_year": best["fiscal_year"],
-                         "doc_type": best["doc_type"], "groups": best_groups},
+                         "doc_type": best["doc_type"], "groups": best_groups,
+                         "doc_hit": best_doc_hit},
                         ensure_ascii=False),
              status, q["question_id"]),
         )

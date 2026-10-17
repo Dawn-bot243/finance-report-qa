@@ -61,13 +61,16 @@ def _alias_re(mdef: MetricDef) -> str:
     return "|".join(re.escape(a) for a in sorted(mdef.aliases, key=len, reverse=True))
 
 
-def regex_fallback(page_text: str, mdefs: list[MetricDef], kind: str) -> list[dict]:
-    """正则兜底：行内「别名[：:]?数值」。返回 [{metric_key, value, raw_value, line}]。"""
+def regex_fallback(page_text: str, mdefs: list[MetricDef], kind: str | None = None) -> list[dict]:
+    """正则兜底：行内「别名[:：]?数值」或表格渲染行「别名 | 数值」。
+    返回 [{metric_key, value, raw_value, line}]。kind 为 None 时不按表类型过滤。"""
     out = []
     for mdef in mdefs:
-        if kind not in mdef.tables:
+        if kind is not None and kind not in mdef.tables:
             continue
-        pat = re.compile(rf"({_alias_re(mdef)})\s*[：:]?\s*([-−－]?\d[\d,，]*\.?\d*%?)")
+        pat = re.compile(
+            rf"({_alias_re(mdef)})\s*(?:[：:]\s*)?[|｜]?\s*([-−－]?\d[\d,，]*\.?\d*%?)"
+        )
         for m in pat.finditer(page_text):
             val = parse_number(m.group(2))
             if val is None:

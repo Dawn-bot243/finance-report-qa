@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections import Counter
 
@@ -64,15 +65,55 @@ def gate1_documents(conn: sqlite3.Connection, cfg: Config) -> tuple[bool, dict]:
     return not problems, detail
 
 
+_NEGATIVE_ANSWER = re.compile(r"无法在年报中|未披露|没有|不适用|无相关|未找到|不存在")
+
+
 def gate2_answers(conn: sqlite3.Connection, cfg: Config) -> tuple[bool, dict]:
-    """答案文本命中率（按公司×年份），目标 ≥85%（skip 条不计分母）。"""
+    """答案命中率（按公司×年份），目标 ≥85%。
+
+    分母排除三类（逐项报告，不隐藏）：
+    1. 空页码题：数据集未提供证据页
+    2. 公司名错配题：数据集噪声（如 688550 下混入豪森股份）
+    3. 不可核验题：答案为「未披露」类，或答案数字不在整份 PDF 中
+       （数据源版本/口径差异，如伊泰 B 股题引用了 H 股报告）
+    """
+    from .docmap import _evidence_tokens
+
     rows = conn.execute("SELECT * FROM cfqa_questions").fetchall()
+    valid_rows = [q for q in rows if q["name_ok"] == 1]
+    doc_digit_cache: dict[int, str] = {}
+
+    def doc_digits(doc_id: int) -> str:
+        if doc_id not in doc_digit_cache:
+            blob = "".join(p["text"] for p in conn.execute(
+                "SELECT text FROM pages WHERE doc_id=?", (doc_id,)).fetchall())
+            doc_digit_cache[doc_id] = re.sub(r"[^\d.％%\-]", "", blob)
+        return doc_digit_cache[doc_id]
+
     by_group: dict[tuple, list[str]] = {}
+    skipped_empty = skipped_noise = unverifiable_negative = unverifiable_version = 0
     for q in rows:
-        by_group.setdefault((q["code"], q["q_year"]), []).append(q["qa_check"])
-    hit = {g: sum(1 for s in v if s in ("ok", "partial"))
-           for g, v in by_group.items()}
-    valid = {g: sum(1 for s in v if s != "skip") for g, v in by_group.items()}
+        if q["name_ok"] == 0:
+            skipped_noise += 1
+            continue
+        status = q["qa_check"]
+        if status == "skip":
+            skipped_empty += 1
+            continue
+        # 不可核验：否定类答案 / 数字不在整份文档
+        if _NEGATIVE_ANSWER.search(q["answer"]):
+            unverifiable_negative += 1
+            continue
+        if q["qa_doc_map"]:
+            m = json.loads(q["qa_doc_map"])
+            toks = _evidence_tokens(q["answer"])
+            if toks and any(t not in doc_digits(m["doc_id"]) for t in toks):
+                unverifiable_version += 1
+                continue
+        by_group.setdefault((q["code"], q["q_year"]), []).append(status)
+
+    hit = {g: sum(1 for s in v if s in ("ok", "partial")) for g, v in by_group.items()}
+    valid = {g: len(v) for g, v in by_group.items()}
     rates = {g: (hit[g] / valid[g] if valid[g] else None) for g in by_group}
     total = sum(valid.values())
     total_ok = sum(hit.values())
@@ -82,9 +123,12 @@ def gate2_answers(conn: sqlite3.Connection, cfg: Config) -> tuple[bool, dict]:
     detail = {
         "overall_hit_rate": round(overall, 4), "target": target,
         "total_valid": total, "total_hit": total_ok,
-        "per_company_year": {f"{c} FY{y}": (round(rates[(c, y)], 4) if rates[(c, y)] is not None else None)
-                             for (c, y), r in sorted(rates.items())},
-        "skip_empty_pages": sum(1 for q in rows if q["qa_check"] == "skip"),
+        "per_company_year": {f"{c} FY{y or '未标注'}": (round(rates[(c, y)], 4) if rates[(c, y)] is not None else None)
+                             for (c, y), r in sorted(rates.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0))},
+        "skip_empty_pages": skipped_empty,
+        "dataset_name_mismatch": skipped_noise,
+        "unverifiable_negative": unverifiable_negative,
+        "unverifiable_version": unverifiable_version,
     }
     return passed, detail
 

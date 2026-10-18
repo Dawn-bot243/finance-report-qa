@@ -24,6 +24,30 @@ companies:
     market: "sse"
     listed_date: "2020-12-16"
     note: "2020-12科创板上市，2019无年报，用招股说明书"
+  # ---- 扩展批次：CFQA test 集第 6-10 名 ----
+  - code: "900948"
+    name: "伊泰B股"
+    org_id: "gssh0900948"
+    market: "sse"
+    note: "B股"
+  - code: "002727"
+    name: "一心堂"
+    org_id: "9900023195"
+    market: "szse"
+  - code: "688550"
+    name: "瑞联新材"
+    org_id: "gfbj0835406"
+    market: "sse"
+    listed_date: "2020-09-02"
+    note: "2020-09科创板上市，2019无年报，用招股说明书"
+  - code: "603289"
+    name: "泰瑞机器"
+    org_id: "9900031734"
+    market: "sse"
+  - code: "600062"
+    name: "华润双鹤"
+    org_id: "gssh0600062"
+    market: "sse"
 
 # 财年范围（年报）：FY2019-2022
 fiscal_years: [2019, 2020, 2021, 2022]
@@ -35,6 +59,8 @@ prospectus_fallback:
   "688608":
     - "finalpage/2020-12-09/1208870808.PDF"   # 招股说明书（注册稿）
     - "finalpage/2020-11-25/1208793582.PDF"   # 招股意向书（备选，docmap 按命中率定主）
+  "688550":
+    - "finalpage/2020-08-26/1208249216.PDF"   # 招股说明书
 
 # cninfo 下载参数
 download:

@@ -59,8 +59,9 @@ _FIELD_MAP: dict[str, dict[str, tuple[str, str, float]]] = {
     },
 }
 
-_BS_CODE = {"600249": "sh.600249", "688366": "sh.688366", "688595": "sh.688595",
-            "688357": "sh.688357", "688608": "sh.688608"}
+def bs_code(code: str) -> str:
+    """A/B 股代码 → baostock 代码：6/9 开头为上交所，其余深交所。"""
+    return ("sh." if code.startswith(("6", "9")) else "sz.") + code
 
 
 def _num(v: str) -> float | None:
@@ -99,12 +100,10 @@ def fetch_baostock(conn: sqlite3.Connection, companies: list[Company], years: li
         raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
     try:
         for company in companies:
-            bs_code = _BS_CODE.get(company.code)
-            if not bs_code:
-                continue
+            code_bs = bs_code(company.code)
             for fy in years:
                 for api_name, field_map in _FIELD_MAP.items():
-                    rs = getattr(bs, api_name)(code=bs_code, year=fy, quarter=4)
+                    rs = getattr(bs, api_name)(code=code_bs, year=fy, quarter=4)
                     rows = []
                     while rs.next():
                         rows.append(rs.get_row_data())

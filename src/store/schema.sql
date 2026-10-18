@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS cfqa_questions (
     answer       TEXT NOT NULL,
     answer_pages TEXT NOT NULL,                 -- 原始 JSON：[[6],[154]]
     q_year       INTEGER,                       -- 问题中解析的年份
+    name_ok      INTEGER NOT NULL DEFAULT 1,    -- 问题标注的公司名与代码所属公司一致（0=数据集噪声）
     qa_doc_map   TEXT,                          -- docmap 结果 JSON
     qa_check     TEXT                           -- 质检②结果 ok|fail|partial|skip
 );

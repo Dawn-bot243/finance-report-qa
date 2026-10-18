@@ -93,33 +93,48 @@ def run_eval(cfg: Config, limit: int | None = None, skip_judge: bool = False) ->
     conn.row_factory = sqlite3.Row
     codes = ",".join("?" * len(cfg.companies))
     qs = conn.execute(
-        f"SELECT * FROM cfqa_questions WHERE qa_check!='skip' AND code IN ({codes}) "
+        f"SELECT * FROM cfqa_questions WHERE qa_check!='skip' AND name_ok=1 AND code IN ({codes}) "
         "ORDER BY question_id",
         [c.code for c in cfg.companies],
     ).fetchall()
     if limit:
         qs = qs[:limit]
-    log.info("评估集 %d 题（前5家公司有效题）", len(qs))
+    log.info("评估集 %d 题（%d 家公司有效题）", len(qs), len(cfg.companies))
 
     stats = {"total": len(qs), "hit5": 0, "hit10": 0,
              "numeric_total": 0, "numeric_correct": 0,
              "text_total": 0, "text_correct": 0,
              "structured_path": 0, "rag_path": 0, "refused": 0,
              "failures": []}
+    per: dict[str, dict] = {}
+
+    def _bucket(code: str) -> dict:
+        return per.setdefault(code, {"total": 0, "hit10": 0, "text_n": 0, "text_c": 0,
+                                     "num_n": 0, "num_c": 0, "refused": 0})
+
     for q in qs:
         question = q["question"]
-        result = ask(question, cfg)
+        b = _bucket(q["code"])
+        b["total"] += 1
+        result = ask(question, cfg, top_k=10)  # hit@10 需要 top-10 候选
         pred = result["answer"] or ""
         if result["path"] == "structured":
             stats["structured_path"] += 1
         else:
             stats["rag_path"] += 1
-        if "证据不足" in pred or "未披露" in pred:
+        refused = "证据不足" in pred or "未披露" in pred
+        if refused:
             stats["refused"] += 1
-        # 检索命中（只对 rag 路径有意义；structured 路径视为命中 top-1）
+            b["refused"] += 1
+        # 检索命中：结构化直答/FAQ 由结构化库或知识库直接作答，视为命中；
+        # RAG 路径检查答案页码是否出现在 top-k 检索结果中
         chunks = result.get("chunks") or []
-        stats["hit5"] += 1 if _retrieval_hit(q["question_id"], chunks, conn, 5) else 0
-        stats["hit10"] += 1 if _retrieval_hit(q["question_id"], chunks, conn, 10) else 0
+        direct = result["path"] in ("structured", "faq")
+        hit10 = True if direct else _retrieval_hit(q["question_id"], chunks, conn, 10)
+        hit5 = True if direct else _retrieval_hit(q["question_id"], chunks, conn, 5)
+        stats["hit5"] += 1 if hit5 else 0
+        stats["hit10"] += 1 if hit10 else 0
+        b["hit10"] += 1 if hit10 else 0
         # 判分：结构化路径答案格式受控 → 数值自动判分；
         # RAG 路径叙述题（含单位/口径/日期细节）→ LLM 判分
         if result["path"] == "structured":
@@ -127,15 +142,22 @@ def run_eval(cfg: Config, limit: int | None = None, skip_judge: bool = False) ->
             if nm is not None:
                 stats["numeric_total"] += 1
                 stats["numeric_correct"] += 1 if nm else 0
+                b["num_n"] += 1
+                b["num_c"] += 1 if nm else 0
             else:
                 stats["text_total"] += 1
+                b["text_n"] += 1
                 if not skip_judge:
-                    stats["text_correct"] += _llm_judge(question, q["answer"], pred)
+                    ok = _llm_judge(question, q["answer"], pred)
+                    stats["text_correct"] += 1 if ok else 0
+                    b["text_c"] += 1 if ok else 0
         else:
             stats["text_total"] += 1
+            b["text_n"] += 1
             if not skip_judge:
                 ok = _llm_judge(question, q["answer"], pred)
                 stats["text_correct"] += 1 if ok else 0
+                b["text_c"] += 1 if ok else 0
             elif _numeric_match(pred, q["answer"]) is False:
                 stats["failures"].append({"id": q["question_id"], "q": question[:60],
                                           "gold": q["answer"][:80], "pred": pred[:120]})
@@ -161,7 +183,17 @@ def run_eval(cfg: Config, limit: int | None = None, skip_judge: bool = False) ->
              f"- 数值题准确率: **{summary['numeric_acc']}%** ({summary['numeric_n']} 题)",
              f"- 文本题一致率(LLM判分): {summary['text_acc']}% ({summary['text_n']} 题)" if not skip_judge else f"- 文本题 {summary['text_n']} 题（跳过判分）",
              f"- 结构化直答占比: {summary['structured_path_pct']}% | 拒答/未披露: {stats['refused']}",
-             "", "## 数值题判错样例", ""]
+             "", "## 按公司分解", "",
+             "| 公司 | 题数 | hit@10 | 文本题一致 | 数值题 | 拒答 |",
+             "|---|---|---|---|---|---|"]
+    name_by_code = {c.code: c.name for c in cfg.companies}
+    for code, b in sorted(per.items()):
+        text_rate = f"{b['text_c']}/{b['text_n']}" if b["text_n"] else "-"
+        num_rate = f"{b['num_c']}/{b['num_n']}" if b["num_n"] else "-"
+        hit_rate = pct(b["hit10"], b["total"])
+        lines.append(f"| {name_by_code.get(code, code)}（{code}） | {b['total']} | {hit_rate}% | "
+                     f"{text_rate} | {num_rate} | {b['refused']} |")
+    lines += ["", "## 数值题判错样例", ""]
     for f in stats["failures"][:20]:
         lines.append(f"- [{f['id']}] {f['q']}")
         lines.append(f"  - gold: {f['gold']}")

@@ -25,7 +25,9 @@ def write_report(conn: sqlite3.Connection, results: dict[str, tuple[bool, dict]]
                 lines.append(f"  - {p}")
         elif gate == "gate2":
             lines.append(f"- 总体命中率: **{d.get('overall_hit_rate')}** (目标 ≥{d.get('target')})")
-            lines.append(f"- 有效 {d.get('total_valid')} 条 / 命中 {d.get('total_hit')} 条 / 空页码跳过 {d.get('skip_empty_pages')} 条")
+            lines.append(f"- 有效 {d.get('total_valid')} 条 / 命中 {d.get('total_hit')} 条")
+            lines.append(f"- 排除项：空页码 {d.get('skip_empty_pages')} 条 · 公司名错配 {d.get('dataset_name_mismatch')} 条 · "
+                         f"未披露类答案 {d.get('unverifiable_negative')} 条 · 数字不在文档（版本差异）{d.get('unverifiable_version')} 条")
             lines.append("- 按公司×年份:")
             for k, v in d.get("per_company_year", {}).items():
                 lines.append(f"  - {k}: {v}")

@@ -60,12 +60,22 @@ def _num_tokens(answer: str) -> list[str]:
     return out
 
 
+def _evidence_tokens(answer: str) -> list[str]:
+    """用于命中校验的证据数字：优先非百分数（报告原文数字）；
+    只有当答案里没有非百分数时，才用百分数（如 ROE 6.38%）。
+    原因：答案中的百分比可能是标注者推导值（税负占比等），报告里未必印出。"""
+    tokens = _num_tokens(answer)
+    non_pct = [t for t in tokens if not t.endswith("%")]
+    pct = [t for t in tokens if t.endswith("%")]
+    return non_pct if non_pct else pct
+
+
 def answer_hits_page(answer: str, page_text: str) -> bool:
     """答案命中判定（页面级）：
-    - 含非年份数字：所有数字 token 需出现在页面（千分位逗号、括号负数容差）
+    - 含证据数字：全部证据数字需出现在页面（千分位逗号、括号负数容差）
     - 纯文本/只有年份：最长公共子串 ≥12 字（否定类答案降为 ≥6）
     """
-    tokens = _num_tokens(answer)
+    tokens = _evidence_tokens(answer)
     if tokens:
         page_digits = re.sub(r"[^\d.％%\-]", "", page_text)
         return all(t in page_digits for t in tokens)
@@ -78,8 +88,8 @@ def answer_hits_page(answer: str, page_text: str) -> bool:
 
 
 def answer_hits_doc(answer: str, pages: list[dict]) -> bool:
-    """答案命中判定（文档级）：所有证据数字出现在文档任一页。"""
-    tokens = _num_tokens(answer)
+    """答案命中判定（文档级）：全部证据数字出现在文档任一页。"""
+    tokens = _evidence_tokens(answer)
     if not tokens:
         return False
     doc_digits = re.sub(r"[^\d.％%\-]", "", "".join(p["text"] for p in pages))

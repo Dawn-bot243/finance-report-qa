@@ -78,6 +78,18 @@ METRIC_DEFS: list[MetricDef] = [
               ("所有者权益合计", "股东权益合计", "归属于母公司所有者权益合计与少数股东权益合计", "所有者权益总计")),
     MetricDef("asset_liability_ratio", "资产负债率", "solvency", "percent", (BALANCE, S2_RATIO),
               ("资产负债率",)),
+    # 资产负债表常用科目（扩展：财报问答高频明细项）
+    MetricDef("short_loan", "短期借款", "solvency", "currency", (BALANCE, PROSPECTUS), ("短期借款",)),
+    MetricDef("notes_payable", "应付票据", "solvency", "currency", (BALANCE, PROSPECTUS), ("应付票据",)),
+    MetricDef("accounts_payable", "应付账款", "solvency", "currency", (BALANCE, PROSPECTUS), ("应付账款",)),
+    MetricDef("contract_liabilities", "合同负债", "solvency", "currency", (BALANCE, PROSPECTUS), ("合同负债",)),
+    MetricDef("advance_receipts", "预收款项", "solvency", "currency", (BALANCE, PROSPECTUS), ("预收款项", "预收账款")),
+    MetricDef("deferred_income", "递延收益", "solvency", "currency", (BALANCE, PROSPECTUS), ("递延收益",)),
+    MetricDef("long_loan", "长期借款", "solvency", "currency", (BALANCE, PROSPECTUS), ("长期借款",)),
+    MetricDef("fixed_assets", "固定资产", "scale", "currency", (BALANCE, PROSPECTUS), ("固定资产",)),
+    MetricDef("construction_in_progress", "在建工程", "scale", "currency", (BALANCE, PROSPECTUS), ("在建工程",)),
+    MetricDef("intangible_assets", "无形资产", "scale", "currency", (BALANCE, PROSPECTUS), ("无形资产",)),
+    MetricDef("goodwill", "商誉", "scale", "currency", (BALANCE, PROSPECTUS), ("商誉",)),
 
     # ---- 合并利润表 ----
     MetricDef("operating_cost", "营业成本", "profitability", "currency", (INCOME, PROSPECTUS), ("营业成本", "营业总成本")),

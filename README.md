@@ -71,6 +71,37 @@ python -X utf8 run_all.py analysis verify --text "两面针2022年营业收入�
 
 阶段三同时修复了招股书数据问题：行名自带单位（`营业收入（万元）`）此前被忽略导致数值缩水 1 万倍；招股书叙述文本触发正则兜底导致错年份/错单位提取（现已对招股书关闭正则兜底），并排除 `2020年1-9月` 等非完整财年列。
 
+## 阶段四：Web 应用与评估
+
+```bash
+# 终端 1：后端（FastAPI）
+python -X utf8 run_all.py serve --port 8000
+
+# 终端 2：前端（Streamlit）
+streamlit run app/streamlit_app.py
+# 浏览器打开 http://localhost:8501
+```
+
+后端接口：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/health` | 健康检查（文档/页数/指标数） |
+| GET | `/companies` | 公司列表 |
+| POST | `/ask` | 问答 `{question, top_k}`，返回路径/回答/引用/数值核验 |
+| GET | `/kb?question=` | 指标解释（知识库） |
+| GET | `/metrics?code=&year=&keys=` | 单公司单财年指标（含出处） |
+| GET | `/compare?codes=&year=&metrics=` | 同业对比（含 markdown 与结构化数据） |
+| GET | `/metric_defs` | 指标定义列表 |
+
+前端三个页签：财报问答（示例问题、路径提示、引用展开）、指标查询（表格 + 出处）、同业对比（2–3 家公司、指标自选、Markdown 表格 + CSV 下载）。
+
+API 冒烟与延迟测试（进程内，无需先启动服务）：
+
+```bash
+python -X utf8 scripts/api_smoke.py
+```
+
 ## 结构化指标的三条来源
 
 按「不用 PDF 硬提表格」原则，结构化指标以 API 为主：

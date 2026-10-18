@@ -87,6 +87,12 @@ def cmd_rag(cfg, args):
         raise SystemExit("rag 子命令: build|ask|eval")
 
 
+def cmd_serve(cfg, args):
+    """启动 FastAPI 后端（uvicorn）。"""
+    import uvicorn
+    uvicorn.run("src.api.server:app", host=args.host, port=args.port, reload=False)
+
+
 def cmd_analysis(cfg, args):
     """分析子命令：compare|kb|verify"""
     import sqlite3
@@ -140,7 +146,7 @@ def cmd_analysis(cfg, args):
 def main():
     parser = argparse.ArgumentParser(description="财报库阶段一流水线")
     parser.add_argument("step", choices=["init", "cfqa", "download", "text", "apis", "metrics", "qc",
-                                         "rag", "analysis", "all"])
+                                         "rag", "analysis", "serve", "all"])
     parser.add_argument("subcmd", nargs="?", help="[rag] build|ask|eval；[analysis] compare|kb|verify")
     parser.add_argument("--force", action="store_true", help="强制重跑（覆盖已有结果）")
     parser.add_argument("--only", help="只处理指定股票代码")
@@ -154,6 +160,8 @@ def main():
     parser.add_argument("--year", type=int, help="[analysis compare] 报告期年份")
     parser.add_argument("--metrics", help="[analysis compare] 指标 key，逗号分隔（默认核心15项）")
     parser.add_argument("--text", help="[analysis verify] 待核验文本")
+    parser.add_argument("--host", default="127.0.0.1", help="[serve] 监听地址")
+    parser.add_argument("--port", type=int, default=8000, help="[serve] 端口")
     args = parser.parse_args()
 
     paths.ensure_dirs()
@@ -163,7 +171,8 @@ def main():
         log.info(">>> 步骤 %s 开始", s)
         {"init": cmd_init, "cfqa": cmd_cfqa, "download": cmd_download,
          "text": cmd_text, "apis": cmd_apis, "metrics": cmd_metrics,
-         "qc": cmd_qc, "rag": cmd_rag, "analysis": cmd_analysis}[s](cfg, args)
+         "qc": cmd_qc, "rag": cmd_rag, "analysis": cmd_analysis,
+         "serve": cmd_serve}[s](cfg, args)
         log.info("<<< 步骤 %s 结束", s)
     return 0
 

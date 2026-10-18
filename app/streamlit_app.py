@@ -1,0 +1,154 @@
+"""财报智能问答与同业对比 · Streamlit 前端。
+
+先启动后端：
+    python -X utf8 run_all.py serve --port 8000
+再启动本界面：
+    streamlit run app/streamlit_app.py
+"""
+import csv
+import io
+import os
+
+import pandas as pd
+import requests
+import streamlit as st
+
+API = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+
+st.set_page_config(page_title="财报智能问答", page_icon="📈", layout="wide")
+
+
+@st.cache_data(ttl=60)
+def api_get(path: str, **params):
+    r = requests.get(f"{API}{path}", params=params, timeout=60)
+    r.raise_for_status()
+    return r.json()
+
+
+def api_post(path: str, payload: dict):
+    r = requests.post(f"{API}{path}", json=payload, timeout=180)
+    r.raise_for_status()
+    return r.json()
+
+
+def health() -> dict | None:
+    try:
+        return api_get("/health")
+    except Exception:
+        return None
+
+
+st.title("📈 上市公司财报智能问答")
+st.caption("检索财报原文 · 生成带出处回答 · 指标解释 · 同业对比")
+
+health_info = health()
+if health_info is None:
+    st.error(f"无法连接后端 {API}。请先运行：`python -X utf8 run_all.py serve --port 8000`")
+    st.stop()
+with st.sidebar:
+    st.subheader("系统状态")
+    st.success("后端已连接")
+    st.write(f"文档 {health_info['documents']} 份 · 页面 {health_info['pages']:,} · 指标 {health_info['metrics']:,} 条")
+    st.divider()
+    st.caption("数据来源：巨潮资讯网年报/招股书\n\n模型：DeepSeek · bge-m3 · bge-reranker")
+
+tab_ask, tab_metrics, tab_compare = st.tabs(["💬 财报问答", "📊 指标查询", "⚖️ 同业对比"])
+
+# ---------------- 问答 ----------------
+with tab_ask:
+    examples = [
+        "两面针2019年营业收入是多少",
+        "毛利率是什么",
+        "恒玄科技2020年研发投入情况",
+        "昊海生科2021年在医美方面有哪些布局",
+    ]
+    cols = st.columns(len(examples))
+    clicked = None
+    for col, ex in zip(cols, examples):
+        if col.button(ex, use_container_width=True):
+            clicked = ex
+
+    question = st.text_area("问题", value=clicked or "", height=80,
+                            placeholder="例如：两面针2022年资产负债率是多少？")
+    if st.button("提问", type="primary") and question.strip():
+        with st.spinner("检索并生成回答…"):
+            try:
+                res = api_post("/ask", {"question": question.strip()})
+            except Exception as e:
+                st.error(f"请求失败：{e}")
+                res = None
+        if res:
+            path_labels = {"faq": "指标解释（知识库直达）", "structured": "结构化指标直答",
+                           "rag": "检索增强生成"}
+            st.info(f"回答路径：**{path_labels.get(res['path'], res['path'])}**")
+            st.markdown(res["answer"])
+            if res.get("structured_check", {}).get("suspicious_tokens"):
+                st.warning("数值核验发现待核实项：" + "、".join(res["structured_check"]["suspicious_tokens"]))
+            with st.expander("引用与检索详情"):
+                if res.get("citations"):
+                    for c in res["citations"]:
+                        st.write("- " + str(c))
+                for ch in res.get("chunks", []):
+                    st.caption(f"doc {ch['doc_id']} · 第{ch['page_no']}页 · 相关度 {ch['score']}")
+
+# ---------------- 指标查询 ----------------
+with tab_metrics:
+    companies = api_get("/companies")
+    name_map = {f"{c['name']}（{c['code']}）": c["code"] for c in companies}
+    col1, col2 = st.columns([2, 1])
+    chosen = col1.selectbox("公司", list(name_map.keys()), key="m_company")
+    year = col2.selectbox("报告期", [2022, 2021, 2020, 2019], key="m_year")
+    try:
+        data = api_get("/metrics", code=name_map[chosen], year=year)
+        df = pd.DataFrame([{
+            "指标": m["name"],
+            "数值": m.get("display", ""),
+            "口径": {"as_reported": "原文披露", "restated": "API重述"}.get(m.get("basis"), ""),
+            "出处": (f"{'招股书' if m.get('doc_type') == 'prospectus' else '年报'} p{m.get('page_no')}"
+                     if m.get("page_no") else (m.get("source") or "")),
+        } for m in data["metrics"]])
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.caption("「未披露」表示该指标在报告中无数据，不视为 0。")
+    except Exception as e:
+        st.error(f"查询失败：{e}")
+
+# ---------------- 同业对比 ----------------
+with tab_compare:
+    companies = api_get("/companies")
+    labels = {f"{c['name']}（{c['code']}）": c["code"] for c in companies}
+    default = list(labels)[:2]
+    chosen_labels = st.multiselect("选择 2-3 家公司", list(labels.keys()), default=default, max_selections=3)
+    year = st.selectbox("报告期", [2022, 2021, 2020, 2019], key="c_year")
+    try:
+        defs = api_get("/metric_defs")
+        key_name = {d["key"]: d["name"] for d in defs}
+    except Exception:
+        key_name = {}
+    default_keys = ["revenue", "net_profit_parent", "roe_weighted", "ocf"]
+    chosen_keys = st.multiselect(
+        "对比指标", list(key_name.keys()),
+        default=default_keys,
+        format_func=lambda k: key_name.get(k, k),
+    )
+    if st.button("生成对比", type="primary") and 2 <= len(chosen_labels) <= 3:
+        codes = ",".join(labels[l] for l in chosen_labels)
+        with st.spinner("读取结构化指标库…"):
+            try:
+                res = api_get("/compare", codes=codes, year=year,
+                              metrics=",".join(chosen_keys) if chosen_keys else None)
+                st.markdown(res["markdown"])
+                # CSV 下载
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                w.writerow(["指标", "公司", "数值", "口径", "来源", "出处页码"])
+                for row in res["rows"]:
+                    for comp, cell in zip(res["companies"], row["cells"]):
+                        w.writerow([row["name"], comp["name"], cell["display"],
+                                    cell["basis"] or "", cell["source"] or "",
+                                    cell["page_no"] or ""])
+                st.download_button("下载 CSV", buf.getvalue().encode("utf-8-sig"),
+                                   file_name=f"peer_compare_{year}.csv", mime="text/csv")
+            except Exception as e:
+                st.error(f"对比失败：{e}")
+    elif chosen_labels:
+        st.caption("请选择 2-3 家公司后点击「生成对比」。")

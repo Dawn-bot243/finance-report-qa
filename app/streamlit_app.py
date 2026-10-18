@@ -62,34 +62,42 @@ with tab_ask:
         "恒玄科技2020年研发投入情况",
         "昊海生科2021年在医美方面有哪些布局",
     ]
+    # 用 session_state 承载输入，示例按钮只写状态（避免 text_area 的 value 在重跑时被重置）
+    if "ask_question" not in st.session_state:
+        st.session_state.ask_question = ""
     cols = st.columns(len(examples))
-    clicked = None
     for col, ex in zip(cols, examples):
-        if col.button(ex, use_container_width=True):
-            clicked = ex
+        if col.button(ex, width="stretch"):
+            st.session_state.ask_question = ex
 
-    question = st.text_area("问题", value=clicked or "", height=80,
-                            placeholder="例如：两面针2022年资产负债率是多少？")
-    if st.button("提问", type="primary") and question.strip():
-        with st.spinner("检索并生成回答…"):
-            try:
-                res = api_post("/ask", {"question": question.strip()})
-            except Exception as e:
-                st.error(f"请求失败：{e}")
-                res = None
-        if res:
-            path_labels = {"faq": "指标解释（知识库直达）", "structured": "结构化指标直答",
-                           "rag": "检索增强生成"}
-            st.info(f"回答路径：**{path_labels.get(res['path'], res['path'])}**")
-            st.markdown(res["answer"])
-            if res.get("structured_check", {}).get("suspicious_tokens"):
-                st.warning("数值核验发现待核实项：" + "、".join(res["structured_check"]["suspicious_tokens"]))
-            with st.expander("引用与检索详情"):
-                if res.get("citations"):
-                    for c in res["citations"]:
-                        st.write("- " + str(c))
-                for ch in res.get("chunks", []):
-                    st.caption(f"doc {ch['doc_id']} · 第{ch['page_no']}页 · 相关度 {ch['score']}")
+    with st.form("ask_form", clear_on_submit=False):
+        question = st.text_area("问题", key="ask_question", height=80,
+                                placeholder="例如：两面针2022年资产负债率是多少？")
+        submitted = st.form_submit_button("提问", type="primary")
+
+    if submitted:
+        if not question.strip():
+            st.warning("请输入问题后再点击提问")
+        else:
+            res = None
+            with st.spinner("检索并生成回答…"):
+                try:
+                    res = api_post("/ask", {"question": question.strip()})
+                except Exception as e:
+                    st.error(f"请求失败：{e}")
+            if res:
+                path_labels = {"faq": "指标解释（知识库直达）", "structured": "结构化指标直答",
+                               "rag": "检索增强生成"}
+                st.info(f"回答路径：**{path_labels.get(res['path'], res['path'])}**")
+                st.markdown(res["answer"])
+                if res.get("structured_check", {}).get("suspicious_tokens"):
+                    st.warning("数值核验发现待核实项：" + "、".join(res["structured_check"]["suspicious_tokens"]))
+                with st.expander("引用与检索详情"):
+                    if res.get("citations"):
+                        for c in res["citations"]:
+                            st.write("- " + str(c))
+                    for ch in res.get("chunks", []):
+                        st.caption(f"doc {ch['doc_id']} · 第{ch['page_no']}页 · 相关度 {ch['score']}")
 
 # ---------------- 指标查询 ----------------
 with tab_metrics:
@@ -107,7 +115,7 @@ with tab_metrics:
             "出处": (f"{'招股书' if m.get('doc_type') == 'prospectus' else '年报'} p{m.get('page_no')}"
                      if m.get("page_no") else (m.get("source") or "")),
         } for m in data["metrics"]])
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="stretch", hide_index=True)
         st.caption("「未披露」表示该指标在报告中无数据，不视为 0。")
     except Exception as e:
         st.error(f"查询失败：{e}")

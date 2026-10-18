@@ -54,6 +54,23 @@ python -X utf8 run_all.py rag eval --eval-limit 20 --skip-judge   # 快速小样
 
 API 依赖（.env）：`DEEPSEEK_API_KEY`（生成/评测）、`SILICONFLOW_API_KEY`（bge-m3 嵌入 + bge-reranker 重排）、`DATASINK_API_KEY`（阶段一用）。
 
+## 阶段三：指标解释与同业对比
+
+```bash
+python -X utf8 run_all.py analysis kb --question "ROE是什么意思"          # 指标知识库（FAQ）
+python -X utf8 run_all.py analysis compare --codes 600249,688366 --year 2022   # 同业对比
+python -X utf8 run_all.py analysis compare --codes 600249,688366 --year 2022 \
+       --metrics revenue,net_profit_parent,roe_weighted                    # 自选指标
+python -X utf8 run_all.py analysis verify --text "两面针2022年营业收入为6.9亿元" \
+       --only 600249 --year 2022                                           # 数值核验
+```
+
+- **指标解释**：`data/metric_kb.yaml` 收录 22 个核心指标（定义/公式/解读/注意事项）。问答入口优先走 FAQ 快速通道（`路径：faq`），命中直接返回，不检索不生成
+- **同业对比**：选 2–3 家公司 + 同一报告期，从结构化指标库生成对比表（Markdown + CSV）。as_reported 原文披露优先、API 重述兜底；逐项标注缺失/口径混合/招股书数据（上市前）等可比性问题
+- **数值核验**：问答回答中的「指标=数值」陈述与结构化库原值比对（容差 0.5%），不一致时在回答末尾追加「⚠️ 待核实」，并记录在 `structured_check`。只核验可归因的指标陈述，避免叙述性数字误报
+
+阶段三同时修复了招股书数据问题：行名自带单位（`营业收入（万元）`）此前被忽略导致数值缩水 1 万倍；招股书叙述文本触发正则兜底导致错年份/错单位提取（现已对招股书关闭正则兜底），并排除 `2020年1-9月` 等非完整财年列。
+
 ## 结构化指标的三条来源
 
 按「不用 PDF 硬提表格」原则，结构化指标以 API 为主：

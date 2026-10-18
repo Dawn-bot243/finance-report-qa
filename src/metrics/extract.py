@@ -12,7 +12,7 @@ from ..logutil import setup_logging
 from ..store import db
 from .anchor import anchor_rows, parse_number, regex_fallback
 from .defs import (BALANCE, CASHFLOW, INCOME, METRIC_BY_KEY, METRIC_DEFS, PROSPECTUS,
-                   S2_DATA, S2_RATIO, MetricDef)
+                   S2_DATA, S2_RATIO, UNIT_FACTORS, MetricDef)
 from .tabparse import ParsedTable, classify_table, clean_table, detect_columns, split_segments, stitch_tables
 from .units import pick_unit
 
@@ -93,6 +93,16 @@ def _extract_from_table(
     defs = [m for m in METRIC_DEFS if table.kind in m.tables and m.yoy_of is None]
     for mdef in defs:
         for row_i in anchor_rows(table.rows, mdef, table.kind):
+            # 行名自带单位（如「营业收入（万元）」）优先于表级单位
+            label = str(table.rows[row_i][0] or "") if table.rows[row_i] else ""
+            row_unit = re.search(r"[（(]\s*(亿元|百万元|千元|万元|元)\s*[)）]", label)
+            row_factor = table.unit_factor
+            row_unit_word = table.unit_word
+            row_unit_src = table.unit_source
+            if mdef.unit_type == "currency" and row_unit:
+                row_unit_word = row_unit.group(1)
+                row_factor = UNIT_FACTORS.get(row_unit_word, 1.0)
+                row_unit_src = "row_label"
             # 普通列
             if table.kind == PROSPECTUS:
                 col_targets = [(int(y), y) for y in sorted(table.col_map.keys()) if y.isdigit()]
@@ -107,8 +117,8 @@ def _extract_from_table(
                 if val is None:
                     continue
                 if mdef.unit_type == "currency":
-                    val = val * table.unit_factor
-                raw_unit = table.unit_word if mdef.unit_type == "currency" else (
+                    val = val * row_factor
+                raw_unit = row_unit_word if mdef.unit_type == "currency" else (
                     "%" if mdef.unit_type in ("percent", "pp") else "元/股")
                 db.upsert(conn, "metrics", {
                     "code": doc["code"], "fiscal_year": fy, "metric_key": mdef.key,
@@ -117,7 +127,7 @@ def _extract_from_table(
                     "source_text": " | ".join(table.rows[row_i][:6])[:300],
                     "column_label": f"{col_label}" if table.kind == PROSPECTUS else col_label,
                     "method": "table",
-                    "confidence": "high" if table.unit_source != "assumed" else "medium",
+                    "confidence": "high" if row_unit_src != "assumed" else "medium",
                     "basis": "as_reported",
                     "cross_metric_id": None, "cross_status": None,
                 }, ("doc_id", "fiscal_year", "metric_key", "source", "column_label"))
@@ -227,30 +237,33 @@ def _extract_doc_metrics_inner(conn: sqlite3.Connection, doc: dict) -> dict:
 
     # S7：正则兜底（第二节窗口页，补 S2_DATA/S2_RATIO 类缺失指标，
     # 覆盖 find_tables 检测不到的无边框表，如分红节的每股净资产）
-    s2_defs = [m for m in METRIC_DEFS
-               if (S2_DATA in m.tables or S2_RATIO in m.tables) and m.yoy_of is None]
-    have_keys = {
-        (r["metric_key"], r["source"]) for r in
-        conn.execute("SELECT metric_key, source FROM metrics WHERE doc_id=?", (doc["doc_id"],))
-    }
-    for pno in sorted(target_pages):
-        text = pages_by_no.get(pno, "")
-        for hit in regex_fallback(text, s2_defs, None):
-            key = (hit["metric_key"], S2_DATA)
-            if key in have_keys:
-                continue
-            db.upsert(conn, "metrics", {
-                "code": doc["code"], "fiscal_year": doc["fiscal_year"],
-                "metric_key": hit["metric_key"], "value": hit["value"],
-                "raw_value": hit["raw_value"], "raw_unit": None,
-                "source": S2_DATA, "doc_id": doc["doc_id"], "page_no": pno,
-                "source_text": hit["line"], "column_label": "本期",
-                "method": "regex_fallback", "confidence": "low",
-                "basis": "as_reported",
-                "cross_metric_id": None, "cross_status": None,
-            }, ("doc_id", "fiscal_year", "metric_key", "source", "column_label"))
-            have_keys.add(key)
-            total += 1
+    # 招股书跳过：其叙述文本（「2020年1-9月营业收入为…万元」）会导致错年份/错单位提取，
+    # 招股书指标以表格提取为准。
+    if doc["doc_type"] != "prospectus":
+        s2_defs = [m for m in METRIC_DEFS
+                   if (S2_DATA in m.tables or S2_RATIO in m.tables) and m.yoy_of is None]
+        have_keys = {
+            (r["metric_key"], r["source"]) for r in
+            conn.execute("SELECT metric_key, source FROM metrics WHERE doc_id=?", (doc["doc_id"],))
+        }
+        for pno in sorted(target_pages):
+            text = pages_by_no.get(pno, "")
+            for hit in regex_fallback(text, s2_defs, None):
+                key = (hit["metric_key"], S2_DATA)
+                if key in have_keys:
+                    continue
+                db.upsert(conn, "metrics", {
+                    "code": doc["code"], "fiscal_year": doc["fiscal_year"],
+                    "metric_key": hit["metric_key"], "value": hit["value"],
+                    "raw_value": hit["raw_value"], "raw_unit": None,
+                    "source": S2_DATA, "doc_id": doc["doc_id"], "page_no": pno,
+                    "source_text": hit["line"], "column_label": "本期",
+                    "method": "regex_fallback", "confidence": "low",
+                    "basis": "as_reported",
+                    "cross_metric_id": None, "cross_status": None,
+                }, ("doc_id", "fiscal_year", "metric_key", "source", "column_label"))
+                have_keys.add(key)
+                total += 1
 
     conn.commit()
     log.info("doc %d (%s FY%d): 提取 %d 条指标", doc["doc_id"], doc["code"], doc["fiscal_year"], total)

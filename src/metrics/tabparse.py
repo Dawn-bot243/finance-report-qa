@@ -129,6 +129,13 @@ def detect_columns(rows: list[list[str]], kind: str, fiscal_year: int) -> dict[s
             if kind == PROSPECTUS:
                 m = re.search(r"(20\d\d)\s*年", c)
                 if m and m.group(1) not in col_map:
+                    # 期间列（2020年1-9月/2020年9月末）不是完整财年，跳过；
+                    # 但年末列（2019年12月31日）是完整财年，保留
+                    if re.search(r"\d+\s*[-~至]\s*\d+\s*月", c):
+                        continue
+                    mth = re.search(r"(\d{1,2})\s*月", c)
+                    if mth and int(mth.group(1)) != 12:
+                        continue
                     col_map[m.group(1)] = ci
                 continue
             m = re.search(r"(20\d\d)\s*年", c)

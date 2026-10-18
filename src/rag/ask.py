@@ -1,10 +1,12 @@
-"""CLI 问答入口：提问 → 结构化直答 → 混合检索 → 生成带出处回答。"""
+"""CLI 问答入口：FAQ 指标解释 → 结构化直答 → 混合检索生成 → 数值核验。"""
 from __future__ import annotations
 
 import sqlite3
 
 from .. import paths
+from ..analysis.verify import format_findings, verify_numbers
 from ..config import Config, load
+from ..kb.metric_kb import faq_answer
 from ..logutil import setup_logging
 from .generator import generate
 from .retriever import analyze_query, chunk_citation, retrieve
@@ -21,6 +23,14 @@ def ask(question: str, cfg: Config | None = None, top_k: int = 5, verbose: bool 
     info = analyze_query(question, cfg)
     result = {"question": question, "path": None, "answer": None, "citations": [], "info": {
         "code": info.code, "year": info.year, "metric_keys": info.metric_keys}}
+
+    # ⓪ FAQ 指标解释（知识库直达，不检索不生成）
+    faq = faq_answer(question, has_company_year=bool(info.code and info.year))
+    if faq:
+        result["path"] = "faq"
+        result["answer"] = faq
+        conn.close()
+        return result
 
     # ① 结构化直答
     s = structured_answer(conn, info, question)
@@ -41,6 +51,16 @@ def ask(question: str, cfg: Config | None = None, top_k: int = 5, verbose: bool 
     result["answer"] = gen["answer"]
     result["citations"] = gen["citations"]
     result["unchecked_numbers"] = gen["unchecked_numbers"]
+
+    # ③ 结构化库数值核验：生成答案中的数字与指标库原值比对
+    check = verify_numbers(conn, result["answer"], info.code, info.year)
+    note = format_findings(check)
+    if note:
+        result["answer"] += "\n\n" + note
+    result["structured_check"] = {
+        "matched": check["matched"],
+        "suspicious_tokens": [f.token for f in check["suspicious"]],
+    }
     result["chunks"] = [{"doc_id": c.doc_id, "page_no": c.page_no, "score": round(c.score, 4)}
                         for c in chunks]
     conn.close()

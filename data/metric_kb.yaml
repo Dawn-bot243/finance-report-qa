@@ -1,0 +1,236 @@
+# 财务指标知识库：FAQ 快速通道数据源
+# 字段：key（对应 metric_defs.key）、name、aliases、category、definition、formula、interpretation、caveats
+metrics:
+  - key: revenue
+    name: 营业收入（营业总收入）
+    aliases: [营业收入, 营业总收入, 营收]
+    category: 规模
+    definition: 企业在日常经营活动中形成的经济利益总流入，反映主营业务规模。
+    formula: 营业收入 = 主营业务收入 + 其他业务收入
+    interpretation: 收入增长代表业务扩张，但需结合毛利率、应收款和现金流判断增长质量。
+    caveats: 会计口径变化（如新收入准则）、并购并表会改变收入可比性；同比数据可能包含追溯重述。
+
+  - key: net_profit_parent
+    name: 归属于母公司股东的净利润（归母净利润）
+    aliases: [归母净利润, 归属于母公司股东的净利润, 归属于上市公司股东的净利润]
+    category: 盈利能力
+    definition: 扣除少数股东损益后，归属于上市公司股东的净利润，是股东实际分享的利润。
+    formula: 归母净利润 = 净利润 − 少数股东损益
+    interpretation: 衡量上市公司为股东创造利润的能力，是 EPS 与 ROE 的基础。
+    caveats: 含非经常性损益（政府补助、资产处置等），持续性需看扣非归母净利润。
+
+  - key: net_profit_deduct
+    name: 扣除非经常性损益后归母净利润（扣非净利润）
+    aliases: [扣非净利润, 扣除非经常性损益后的净利润, 扣非归母净利润]
+    category: 盈利能力
+    definition: 剔除政府补助、资产处置、公允价值变动等非经常项目后的归母净利润，反映主业真实盈利能力。
+    formula: 扣非归母净利润 = 归母净利润 − 非经常性损益（税后）
+    interpretation: 与归母净利润差距越大，说明利润越依赖非主业因素，质量越需警惕。
+    caveats: 非经常性损益的认定存在主观空间，不同公司口径可能略有差异。
+
+  - key: net_profit
+    name: 净利润
+    aliases: [净利润, 净利]
+    category: 盈利能力
+    definition: 企业当期实现的税后利润总额，包含少数股东应享份额。
+    formula: 净利润 = 利润总额 − 所得税费用
+    interpretation: 归母净利润与净利润之差即少数股东损益，差额大说明子公司股权结构复杂。
+    caveats: 净利润不等于现金流，需结合经营活动现金流净额判断盈利质量。
+
+  - key: roe_weighted
+    name: 加权平均净资产收益率（ROE）
+    aliases: [ROE, 净资产收益率, 加权平均净资产收益率]
+    category: 盈利能力
+    definition: 净利润相对于平均净资产的比率，衡量股东投入资本的回报效率。
+    formula: 加权平均ROE = 归属于普通股股东的净利润 ÷ 加权平均净资产 × 100%
+    interpretation: 持续高于 15% 通常视为优秀；需结合杠杆水平看，高杠杆会放大 ROE。
+    caveats: 分母用加权平均而非期末值；增发、回购会稀释或抬升；与 EPS 增长背离时需查原因。
+
+  - key: gross_margin
+    name: 毛利率
+    aliases: [毛利率, 销售毛利率]
+    category: 盈利能力
+    definition: 营业收入扣除营业成本后的利润占比，反映产品或服务的初始盈利空间。
+    formula: 毛利率 =（营业收入 − 营业成本）÷ 营业收入 × 100%
+    interpretation: 毛利率高且稳定说明产品有定价权或成本优势；下滑常源于价格竞争或原材料涨价。
+    caveats: 产品结构变化、低毛利业务并表会拉低整体毛利率；不同行业不可直接横比。
+
+  - key: net_margin
+    name: 净利率
+    aliases: [净利率, 销售净利率]
+    category: 盈利能力
+    definition: 净利润占营业收入的比重，反映最终盈利效率。
+    formula: 净利率 = 净利润 ÷ 营业收入 × 100%
+    interpretation: 毛利率到净利率的损耗体现费用控制能力与税负。
+    caveats: 含非经常性损益；金融类公司收入口径特殊，不宜与制造业横比。
+
+  - key: eps_basic
+    name: 基本每股收益（EPS）
+    aliases: [EPS, 每股收益, 基本每股收益]
+    category: 每股指标
+    definition: 归属于普通股股东的当期净利润除以发行在外普通股加权平均数。
+    formula: 基本EPS = 归属于普通股股东的净利润 ÷ 发行在外普通股加权平均数
+    interpretation: 股东视角的盈利度量，与股价相比可得市盈率（P/E）。
+    caveats: 送转股、增发会改变股本，跨期比较需看稀释后数据或绝对值。
+
+  - key: eps_diluted
+    name: 稀释每股收益
+    aliases: [稀释每股收益]
+    category: 每股指标
+    definition: 假设可转债、期权等潜在普通股全部转换后的每股收益，是最保守的口径。
+    formula: 稀释EPS = 调整后净利润 ÷ 稀释加权平均普通股数
+    interpretation: 与基本EPS差距大说明潜在稀释风险高（可转债、股权激励）。
+    caveats: 亏损公司稀释EPS与基本EPS关系可能反转（反稀释）。
+
+  - key: bps
+    name: 每股净资产
+    aliases: [每股净资产, BPS]
+    category: 每股指标
+    definition: 归属于母公司股东的净资产除以期末总股本，代表每股对应的账面价值。
+    formula: 每股净资产 = 归属于母公司股东的净资产 ÷ 期末总股本
+    interpretation: 与股价比较可得市净率（P/B）；是账面价值，不代表可变现价值。
+    caveats: 轻资产公司的账面价值意义有限；商誉减值会显著侵蚀净资产。
+
+  - key: total_assets
+    name: 资产总额
+    aliases: [总资产, 资产总额, 资产总计]
+    category: 规模
+    definition: 企业拥有或控制的全部经济资源，等于负债与所有者权益之和。
+    formula: 资产总额 = 负债合计 + 所有者权益合计
+    interpretation: 规模指标，需结合资产周转率和资产质量（应收、存货、商誉）看。
+    caveats: 金融机构与工商企业资产结构差异极大，不可直接比规模。
+
+  - key: net_assets_parent
+    name: 归属于母公司股东的净资产
+    aliases: [归母净资产, 归属于母公司所有者权益, 归属于母公司股东的净资产]
+    category: 规模
+    definition: 扣除少数股东权益后归属上市公司股东的账面净资产。
+    formula: 归母净资产 = 所有者权益合计 − 少数股东权益
+    interpretation: ROE 的分母，也是每股净资产的基础；持续增长依赖留存收益。
+    caveats: 大额分红、回购会减少净资产；其他综合收益波动（如汇率、金融资产公允价值）会影响。
+
+  - key: total_liabilities
+    name: 负债合计
+    aliases: [负债合计, 总负债, 负债总额]
+    category: 偿债能力
+    definition: 企业承担的全部债务义务，包括流动负债与非流动负债。
+    formula: 负债合计 = 流动负债合计 + 非流动负债合计
+    interpretation: 结合资产负债率与有息负债结构判断偿债压力。
+    caveats: 预收账款/合同负债多也可能是好生意（先收钱后发货），不能只看负债规模。
+
+  - key: asset_liability_ratio
+    name: 资产负债率
+    aliases: [资产负债率]
+    category: 偿债能力
+    definition: 总负债占总资产的比重，衡量财务杠杆水平。
+    formula: 资产负债率 = 负债合计 ÷ 资产总额 × 100%
+    interpretation: 一般制造业 40%-60% 较常见；过高意味着偿债压力，过低可能资本利用不足。
+    caveats: 行业差异大（银行、地产天然高杠杆）；含无息负债（应付、预收），需结合有息负债看。
+
+  - key: current_ratio
+    name: 流动比率
+    aliases: [流动比率]
+    category: 偿债能力
+    definition: 流动资产对流动负债的覆盖倍数，衡量短期偿债能力。
+    formula: 流动比率 = 流动资产合计 ÷ 流动负债合计
+    interpretation: 通常认为 2 左右较稳健，但过高说明流动资产利用效率低。
+    caveats: 存货占比高时流动比率会高估偿债能力，需结合速动比率。
+
+  - key: quick_ratio
+    name: 速动比率
+    aliases: [速动比率]
+    category: 偿债能力
+    definition: 扣除存货后的流动资产对流动负债的覆盖倍数。
+    formula: 速动比率 =（流动资产 − 存货）÷ 流动负债
+    interpretation: 通常 1 左右较健康；低于 1 说明短期偿付依赖存货变现。
+    caveats: 应收账款质量差时速动比率同样会高估。
+
+  - key: ocf
+    name: 经营活动产生的现金流量净额
+    aliases: [经营现金流, 经营活动产生的现金流量净额, 经营活动现金流量净额]
+    category: 现金流
+    definition: 企业日常经营活动产生的现金流入减流出，是盈利质量的核心验证指标。
+    formula: 经营现金流净额 = 经营活动现金流入 − 经营活动现金流出
+    interpretation: 长期应接近或高于净利润；持续低于净利润说明利润未转化为现金（应收、存货占用）。
+    caveats: 预收款、票据结算、并购会短期扰动；金融机构口径特殊。
+
+  - key: icf
+    name: 投资活动产生的现金流量净额
+    aliases: [投资现金流, 投资活动产生的现金流量净额]
+    category: 现金流
+    definition: 购建资产、对外投资等投资活动的现金净流量，通常为负。
+    formula: 投资现金流净额 = 投资活动现金流入 − 投资活动现金流出
+    interpretation: 负值大且伴随产能扩张是成长信号；若主要是理财买卖则需区分。
+    caveats: 理财产品申赎会大幅扰动该科目，需看购建固定资产支付的现金明细。
+
+  - key: fcf
+    name: 筹资活动产生的现金流量净额
+    aliases: [筹资现金流, 筹资活动产生的现金流量净额]
+    category: 现金流
+    definition: 借款、还款、分红、增发等筹资活动的现金净流量。
+    formula: 筹资现金流净额 = 筹资活动现金流入 − 筹资活动现金流出
+    interpretation: 正值说明在融资（借款或增发），负值可能是还债或回报股东；结合公司发展阶段解读。
+    caveats: 不能单看正负判断好坏，需结合资产负债率变化与分红政策。
+
+  - key: operating_cost
+    name: 营业成本
+    aliases: [营业成本, 营业总成本]
+    category: 盈利能力
+    definition: 与营业收入直接相关的成本支出。
+    formula: 营业成本 = 主营业务成本 + 其他业务成本
+    interpretation: 与收入增速对比可判断成本控制；增速持续快于收入会压缩毛利率。
+    caveats: 「营业总成本」含期间费用和税金，与「营业成本」口径不同，注意区分。
+
+  - key: operating_profit
+    name: 营业利润
+    aliases: [营业利润]
+    category: 盈利能力
+    definition: 经营活动产生的利润，不含营业外收支。
+    formula: 营业利润 = 营业收入 − 营业成本 − 税金及附加 − 期间费用 + 其他收益等
+    interpretation: 反映主业盈利能力，与利润总额的差异来自营业外收支。
+    caveats: 政府补助、投资收益、公允价值变动可能计入营业利润，需看明细。
+
+  - key: total_profit
+    name: 利润总额
+    aliases: [利润总额]
+    category: 盈利能力
+    definition: 营业利润加上营业外收支后的利润，尚未扣除所得税。
+    formula: 利润总额 = 营业利润 + 营业外收入 − 营业外支出
+    interpretation: 与营业利润差异大说明依赖营业外项目。
+    caveats: 所得税率变化会放大或缩小利润总额与净利润的差异。
+
+  - key: rd_expense
+    name: 研发费用
+    aliases: [研发费用, 研发投入]
+    category: 盈利能力
+    definition: 企业研发活动发生的费用化支出，反映技术投入强度。
+    formula: 研发费用通常以研发投入合计减去资本化部分
+    interpretation: 研发费用率（研发费用÷营业收入）是科技企业竞争力的重要指标。
+    caveats: 部分研发支出资本化后不计入当期费用，跨公司比较时需核对资本化比例。
+
+  - key: inventory
+    name: 存货
+    aliases: [存货, 存货余额]
+    category: 营运能力
+    definition: 为销售或生产而持有的原材料、在产品、产成品等。
+    formula: 期末存货 = 期初存货 + 本期增加 − 本期减少
+    interpretation: 存货增速持续高于收入增速可能预示滞销，需关注跌价准备。
+    caveats: 地产、白酒等行业的存货具有增值属性，不能一概而论。
+
+  - key: accounts_receivable
+    name: 应收账款
+    aliases: [应收账款, 应收款项]
+    category: 营运能力
+    definition: 因销售商品或提供劳务应向客户收取的款项。
+    formula: 应收账款 = 应收票据及应收账款中的应收部分
+    interpretation: 增速快于收入说明回款变差，可能放宽信用政策刺激销售；
+    caveats: 需结合账龄结构和坏账准备；高应收 + 高利润但经营现金流差是典型警示组合。
+
+  - key: monetary_funds
+    name: 货币资金
+    aliases: [货币资金, 现金及现金等价物]
+    category: 偿债能力
+    definition: 库存现金、银行存款和其他货币资金的合计。
+    formula: 货币资金 = 库存现金 + 银行存款 + 其他货币资金
+    interpretation: 充裕的货币资金提供安全垫，但过多闲置资金可能拖累 ROE。
+    caveats: 关注货币资金受限情况（保证金、质押），以及「存贷双高」异常信号。

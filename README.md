@@ -118,6 +118,7 @@ python -X utf8 scripts/api_smoke.py
 ```bash
 python -X utf8 run_all.py agent ask --question "对比两面针和一心堂2022年的盈利能力并解释差异原因" --verbose
 python -X utf8 run_all.py agent eval              # CFQA 分层抽样 80 题 + 10 条手写多步任务
+python -X utf8 run_all.py agent debate --company 600249 --year 2022 --rounds 3   # 多空辩论尽调报告
 ```
 
 | 工具 | 能力 |
@@ -140,6 +141,10 @@ python -X utf8 run_all.py agent eval              # CFQA 分层抽样 80 题 + 1
 4. 重写耗尽仍不足 → 返回「证据不足」让上层拒答，**不硬生成可能错误的答案**
 
 评估对照：`python -X utf8 scripts/corrective_eval.py`（同一批题切换自校正好坏）。
+
+**多智能体辩论**（[src/agent/debate.py](src/agent/debate.py)）：看多 / 看空两个 Agent 各自挂载全部工具实时取证，
+交替发言 N 轮（默认 3，`--rounds` 可调 1–5）；每轮发言带【文档名 第N页】引用。辩论结束后主笔 Agent
+汇总出尽调报告（核心结论 / 共识 / 分歧 / 关键证据 / 风险提示），报告存 `reports/debate_{code}_{year}_{ts}.md`。
 
 ## 结构化指标的三条来源
 

@@ -47,8 +47,12 @@ def embed(texts: list[str], batch: int = 32, retries: int = 3) -> list[list[floa
     return out
 
 
-def rerank(query: str, docs: list[str], top_n: int = 5, retries: int = 3) -> list[tuple[int, float]]:
-    """bge-reranker-v2-m3 重排。返回 [(文档下标, 相关性分数)] 按分数降序。"""
+def rerank(query: str, docs: list[str], top_n: int = 5, retries: int = 1,
+           timeout: int = 12) -> list[tuple[int, float]]:
+    """bge-reranker-v2-m3 重排。返回 [(文档下标, 相关性分数)] 按分数降序。
+
+    timeout 较短：API 变慢时快速失败，由调用方退回 RRF 结果（检索仍可用）。
+    """
     import requests
     key = load_env().get("SILICONFLOW_API_KEY", "")
     for attempt in range(1, retries + 1):
@@ -58,7 +62,7 @@ def rerank(query: str, docs: list[str], top_n: int = 5, retries: int = 3) -> lis
                 headers={"Authorization": f"Bearer {key}"},
                 json={"model": RERANK_MODEL, "query": query, "documents": docs,
                       "top_n": min(top_n, len(docs)), "return_documents": False},
-                timeout=60,
+                timeout=timeout,
             )
             resp.raise_for_status()
             results = resp.json().get("results", [])

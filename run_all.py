@@ -88,7 +88,7 @@ def cmd_rag(cfg, args):
 
 
 def cmd_agent(cfg, args):
-    """Agent 子命令：ask|eval（LLM 自主调用工具）"""
+    """Agent 子命令：ask|eval|debate（LLM 自主调用工具）"""
     from src.agent.loop import agent_ask, print_agent_answer
     from src.agent.eval import run_agent_eval
     if args.subcmd == "ask":
@@ -101,8 +101,14 @@ def cmd_agent(cfg, args):
     elif args.subcmd == "eval":
         run_agent_eval(cfg, limit=args.eval_limit, skip_judge=args.skip_judge,
                        max_iters=args.agent_max_iters)
+    elif args.subcmd == "debate":
+        from src.agent.debate import debate, print_debate
+        if not args.company or not args.year:
+            raise SystemExit("agent debate 需要 --company（股票代码）与 --year")
+        print_debate(debate(args.company, args.year, cfg, rounds=args.rounds,
+                            verbose=args.verbose))
     else:
-        raise SystemExit("agent 子命令: ask|eval")
+        raise SystemExit("agent 子命令: ask|eval|debate")
 
 
 def cmd_serve(cfg, args):
@@ -180,6 +186,8 @@ def main():
     parser.add_argument("--text", help="[analysis verify] 待核验文本")
     parser.add_argument("--agent-max-iters", type=int, default=6,
                         help="[agent] 最大工具调用轮数")
+    parser.add_argument("--company", help="[agent debate] 股票代码（6 位）")
+    parser.add_argument("--rounds", type=int, default=3, help="[agent debate] 辩论轮数（1-5）")
     parser.add_argument("--host", default="127.0.0.1", help="[serve] 监听地址")
     parser.add_argument("--port", type=int, default=8000, help="[serve] 端口")
     args = parser.parse_args()

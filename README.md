@@ -122,7 +122,7 @@ python -X utf8 run_all.py agent eval              # CFQA 分层抽样 80 题 + 1
 
 | 工具 | 能力 |
 |------|------|
-| `search_report` | 全文混合检索 + 带页码引用生成 |
+| `search_report` | 全文混合检索 + 自校正（相关性不足时自动重写查询重检索）+ 带页码引用生成 |
 | `get_metric` | 结构化指标点查（含出处） |
 | `compare_companies` | 2–3 家公司同报告期对比 |
 | `explain_metric` | 指标知识库解释（22 个指标） |
@@ -131,6 +131,15 @@ python -X utf8 run_all.py agent eval              # CFQA 分层抽样 80 题 + 1
 实现：手写 function-calling 循环（requests 直连 DeepSeek tools 参数，不引入 Agent 框架）——
 [src/agent/tools.py](src/agent/tools.py) 工具 schema 与实现、[src/agent/loop.py](src/agent/loop.py) 循环与 trace、
 [src/agent/eval.py](src/agent/eval.py) 评估。`--verbose` 打印每步工具调用与耗时。
+
+**自校正检索**（[src/rag/corrective.py](src/rag/corrective.py)）：`search_report` 在检索与生成之间插入质量评估节点——
+
+1. rerank top-1 分数 ≥ 0.5 → 直接生成（不花额外调用）
+2. 低于阈值 → LLM 复核「这些片段能否回答问题」
+3. 判定不足 → LLM 重写查询 → 重新检索（最多 2 轮）
+4. 重写耗尽仍不足 → 返回「证据不足」让上层拒答，**不硬生成可能错误的答案**
+
+评估对照：`python -X utf8 scripts/corrective_eval.py`（同一批题切换自校正好坏）。
 
 ## 结构化指标的三条来源
 

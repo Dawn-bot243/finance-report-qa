@@ -48,15 +48,16 @@ def _system_prompt(cfg: Config) -> str:
 
 
 def agent_ask(question: str, cfg: Config | None = None, max_iters: int = 6,
-              verbose: bool = False) -> dict:
+              verbose: bool = False, corrective: bool = True) -> dict:
     """运行一次 Agent 问答。返回 {answer, trace, iterations, forced}。
 
+    corrective=False 时 search_report 退回单次检索（用于对照评估）。
     trace 每项：{tool, args, ok, chars, elapsed_ms, result_preview}
     """
     cfg = cfg or load()
     conn = sqlite3.connect(paths.db_path())
     conn.row_factory = sqlite3.Row
-    ctx = {"conn": conn, "cfg": cfg}
+    ctx = {"conn": conn, "cfg": cfg, "corrective": corrective}
     tools = build_tools(cfg)
     messages: list[dict] = [
         {"role": "system", "content": _system_prompt(cfg)},

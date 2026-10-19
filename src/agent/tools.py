@@ -19,8 +19,8 @@ from ..config import Config
 from ..kb.metric_kb import format_entry, match_metric
 from ..logutil import setup_logging
 from ..metrics.defs import METRIC_BY_KEY
+from ..rag.corrective import retrieve_corrective
 from ..rag.generator import generate
-from ..rag.retriever import retrieve
 
 log = setup_logging(__name__)
 
@@ -137,9 +137,25 @@ def _tool_search_report(ctx: dict, args: dict) -> str:
     question = str(args.get("question", "")).strip()
     if not question:
         return "参数缺失：需要 question。"
-    chunks = retrieve(question, ctx["cfg"], top_k=5)  # 与 RAG 直答保持一致
-    gen = generate(question, chunks)
-    return gen["answer"]
+    if not ctx.get("corrective", True):
+        # 对照组：单次检索（旧行为）
+        from ..rag.retriever import retrieve
+        gen = generate(question, retrieve(question, ctx["cfg"], top_k=5))
+        return gen["answer"]
+    # 自校正检索：证据不足时先重写查询重检索，最多 2 轮；仍不足则拒答而非硬生成
+    res = retrieve_corrective(question, ctx["cfg"], top_k=5, max_rewrites=2)
+    if not res["sufficient"]:
+        detail = "；".join(f"「{r['from'][:30]}」→「{r['to'][:30]}」"
+                           for r in res["rewrites"]) or "无重写"
+        return (f"证据不足：经过 {res['rounds']} 轮检索仍未找到与该问题足够相关的年报片段，"
+                f"无法可靠作答。检索重写记录：{detail}。"
+                f"请勿编造，可换个角度调用本工具或改用其他工具。")
+    gen = generate(question, res["chunks"])
+    answer = gen["answer"]
+    if res["rewrites"]:
+        answer += (f"\n\n（检索说明：初始查询相关性不足，已自动重写 "
+                   f"{len(res['rewrites'])} 次后取得证据）")
+    return answer
 
 
 def _tool_compare(ctx: dict, args: dict) -> str:

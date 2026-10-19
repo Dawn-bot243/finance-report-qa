@@ -150,6 +150,27 @@ python -X utf8 run_all.py agent debate --company 600249 --year 2022 --rounds 3  
 交替发言 N 轮（默认 3，`--rounds` 可调 1–5）；每轮发言带【文档名 第N页】引用。辩论结束后主笔 Agent
 汇总出尽调报告（核心结论 / 共识 / 分歧 / 关键证据 / 风险提示），报告存 `reports/debate_{code}_{year}_{ts}.md`。
 
+## 部署（Docker Compose + Nginx + 鉴权 + 限流）
+
+```bash
+cp .env.example .env                     # 填入 DEEPSEEK/SILICONFLOW/DATASINK keys
+export API_KEY=$(openssl rand -hex 16)   # 访问密钥（不设则关闭鉴权）
+export RATE_LIMIT_PER_MINUTE=60          # 每 IP 每分钟上限（0=关闭应用层限流）
+docker compose up -d --build
+# 浏览器打开 http://localhost:8080
+```
+
+| 服务 | 作用 |
+|------|------|
+| `backend` | FastAPI，容器内 8000 |
+| `frontend` | Streamlit，容器内 8501 |
+| `nginx` | 反代：`/api/` → backend、`/` → frontend（含 WebSocket），宿主机 8080 |
+
+- **鉴权**：设置 `API_KEY` 后，除 `/health`、`/docs` 外的接口需带 `X-API-Key` 或 `Authorization: Bearer`；Streamlit 自动携带
+- **限流**：nginx 层 `/api/` 5r/s、页面 20r/s（burst 10/40）；应用层 `RATE_LIMIT_PER_MINUTE` 每 IP 固定窗口兜底
+- 数据不进镜像：`db/`（103MB）、`raw/`（212MB）由 compose 挂载
+- 详细说明与排障见 [deploy/README.md](deploy/README.md)
+
 ## 结构化指标的三条来源
 
 按「不用 PDF 硬提表格」原则，结构化指标以 API 为主：

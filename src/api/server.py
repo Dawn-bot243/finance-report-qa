@@ -21,13 +21,15 @@ from ..kb.metric_kb import format_entry, match_metric
 from ..logutil import setup_logging
 from ..metrics.defs import METRIC_BY_KEY
 from ..rag.ask import ask
+from .security import security_middleware
 
 log = setup_logging(__name__)
 
-app = FastAPI(title="财报智能问答 API", version="0.4.0")
+app = FastAPI(title="财报智能问答 API", version="0.5.0")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
+app.middleware("http")(security_middleware)
 
 
 def _conn() -> sqlite3.Connection:

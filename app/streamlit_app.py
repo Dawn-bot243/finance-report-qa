@@ -14,19 +14,21 @@ import requests
 import streamlit as st
 
 API = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+API_KEY = os.getenv("API_KEY", "")
+HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 
 st.set_page_config(page_title="财报智能问答", page_icon="📈", layout="wide")
 
 
 @st.cache_data(ttl=60)
 def api_get(path: str, **params):
-    r = requests.get(f"{API}{path}", params=params, timeout=60)
+    r = requests.get(f"{API}{path}", params=params, headers=HEADERS, timeout=60)
     r.raise_for_status()
     return r.json()
 
 
 def api_post(path: str, payload: dict):
-    r = requests.post(f"{API}{path}", json=payload, timeout=180)
+    r = requests.post(f"{API}{path}", json=payload, headers=HEADERS, timeout=180)
     r.raise_for_status()
     return r.json()
 

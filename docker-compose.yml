@@ -1,0 +1,55 @@
+services:
+  backend:
+    build: .
+    image: finance-report-qa:latest
+    container_name: fnqa-backend
+    command: uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    environment:
+      API_KEY: ${API_KEY:-}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+    volumes:
+      - ./db:/app/db          # SQLite（103MB，含 10,683 页文本与 5,132 条指标）
+      - ./raw:/app/raw        # PDF 原文（212MB）
+      - ./reports:/app/reports
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    image: finance-report-qa:latest
+    container_name: fnqa-frontend
+    command: >
+      streamlit run app/streamlit_app.py
+      --server.port 8501 --server.address 0.0.0.0
+      --server.headless true --browser.gatherUsageStats false
+    environment:
+      API_BASE_URL: http://backend:8000
+      API_KEY: ${API_KEY:-}
+    volumes:
+      - ./reports:/app/reports
+    expose:
+      - "8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: fnqa-nginx
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped

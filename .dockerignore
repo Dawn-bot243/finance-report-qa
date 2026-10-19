@@ -1,0 +1,16 @@
+.git/
+.gitignore
+.env
+db/
+raw/
+reports/
+logs/
+项目报告/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+*.log

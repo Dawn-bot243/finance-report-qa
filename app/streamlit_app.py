@@ -52,7 +52,8 @@ with st.sidebar:
     st.divider()
     st.caption("数据来源：巨潮资讯网年报/招股书\n\n模型：DeepSeek · bge-m3 · bge-reranker")
 
-tab_ask, tab_metrics, tab_compare = st.tabs(["💬 财报问答", "📊 指标查询", "⚖️ 同业对比"])
+tab_ask, tab_metrics, tab_compare, tab_agent = st.tabs(
+    ["💬 财报问答", "📊 指标查询", "⚖️ 同业对比", "🤖 智能体问答"])
 
 # ---------------- 问答 ----------------
 with tab_ask:
@@ -160,3 +161,59 @@ with tab_compare:
                 st.error(f"对比失败：{e}")
     elif chosen_labels:
         st.caption("请选择 2-3 家公司后点击「生成对比」。")
+
+# ---------------- 智能体问答 ----------------
+with tab_agent:
+    st.caption("Agent 会自主决定调用哪个工具（全文检索 / 指标查询 / 同业对比 / 指标解释 / 数值核验），"
+               "单次提问最多 6 轮工具调用。复杂问题（对比、归因、多步）效果更好。")
+
+    agent_examples = [
+        "对比两面针和一心堂2022年的盈利能力，并解释差异原因",
+        "两面针2022年营业收入是多少？和2021年相比是增长还是下降？",
+        "ROE是什么意思？两面针2022年的ROE是多少？",
+        "帮我核验这句话：两面针2022年营业收入为6.69亿元",
+    ]
+    if "agent_question" not in st.session_state:
+        st.session_state.agent_question = ""
+    cols = st.columns(len(agent_examples))
+    for i, (col, ex) in enumerate(zip(cols, agent_examples)):
+        if col.button(ex, key=f"agent_ex_{i}", width="stretch"):
+            st.session_state.agent_question = ex
+
+    with st.form("agent_form", clear_on_submit=False):
+        agent_q = st.text_area("问题", key="agent_question", height=80,
+                               placeholder="例如：对比两面针和一心堂2022年的盈利能力，并解释差异原因")
+        agent_submitted = st.form_submit_button("提问（Agent）", type="primary")
+
+    if agent_submitted:
+        if not agent_q.strip():
+            st.warning("请输入问题后再点击提问")
+        else:
+            with st.spinner("Agent 正在规划并调用工具（可能需要 10–60 秒）…"):
+                try:
+                    st.session_state.agent_result = api_post(
+                        "/agent", {"question": agent_q.strip(), "max_iters": 6})
+                except Exception as e:
+                    st.error(f"请求失败：{e}")
+                    st.session_state.agent_result = None
+
+    agent_res = st.session_state.get("agent_result")
+    if agent_res:
+        trace = agent_res.get("trace", [])
+        st.success(f"完成：{agent_res['iterations']} 轮推理 · 工具调用 {len(trace)} 次 · "
+                   f"耗时 {agent_res.get('elapsed_s', '?')}s")
+        st.markdown(agent_res["answer"])
+        if trace:
+            tool_cn = {"search_report": "全文检索", "get_metric": "指标查询",
+                       "compare_companies": "同业对比", "explain_metric": "指标解释",
+                       "verify_numbers": "数值核验"}
+            with st.expander(f"工具调用轨迹（{len(trace)} 次）", expanded=False):
+                st.dataframe(pd.DataFrame([{
+                    "顺序": i + 1,
+                    "工具": tool_cn.get(t["tool"], t["tool"]),
+                    "参数": t["args"][:120],
+                    "结果字数": t["chars"],
+                    "耗时(ms)": t["elapsed_ms"],
+                    "状态": "✓" if t["ok"] else "✗",
+                } for i, t in enumerate(trace)]), width="stretch", hide_index=True)
+                st.caption("点击展开可查看每次工具调用的参数与结果摘要。")

@@ -98,6 +98,7 @@ streamlit run app/streamlit_app.py
 | GET | `/health` | 健康检查（文档/页数/指标数） |
 | GET | `/companies` | 公司列表 |
 | POST | `/ask` | 问答 `{question, top_k}`，返回路径/回答/引用/数值核验 |
+| POST | `/agent` | 工具调用型 Agent `{question, max_iters, corrective}`，返回回答/工具轨迹/迭代轮数 |
 | GET | `/kb?question=` | 指标解释（知识库） |
 | GET | `/metrics?code=&year=&keys=` | 单公司单财年指标（含出处） |
 | GET | `/compare?codes=&year=&metrics=` | 同业对比（含 markdown 与结构化数据） |
@@ -141,6 +142,9 @@ python -X utf8 run_all.py agent debate --company 600249 --year 2022 --rounds 3  
 4. 重写耗尽仍不足 → 返回「证据不足」让上层拒答，**不硬生成可能错误的答案**
 
 评估对照：`python -X utf8 scripts/corrective_eval.py`（同一批题切换自校正好坏）。
+
+**Web 入口**：后端 `/agent` 端点；前端 Streamlit 第四个页签「🤖 智能体问答」，
+展示回答、迭代轮数、耗时与可展开的工具调用轨迹（工具/参数/结果字数/耗时）。
 
 **多智能体辩论**（[src/agent/debate.py](src/agent/debate.py)）：看多 / 看空两个 Agent 各自挂载全部工具实时取证，
 交替发言 N 轮（默认 3，`--rounds` 可调 1–5）；每轮发言带【文档名 第N页】引用。辩论结束后主笔 Agent

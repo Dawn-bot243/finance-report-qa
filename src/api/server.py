@@ -41,6 +41,12 @@ class AskRequest(BaseModel):
     top_k: int = 5
 
 
+class AgentRequest(BaseModel):
+    question: str
+    max_iters: int = 6
+    corrective: bool = True
+
+
 @app.get("/health")
 def health() -> dict:
     try:
@@ -72,6 +78,25 @@ def ask_endpoint(req: AskRequest) -> dict:
         return ask(req.question, load(), top_k=req.top_k)
     except Exception as e:
         log.exception("ask 失败")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/agent")
+def agent_endpoint(req: AgentRequest) -> dict:
+    """工具调用型 Agent：LLM 自主决定调用哪个工具，返回答案 + 工具轨迹。"""
+    if not req.question.strip():
+        raise HTTPException(status_code=400, detail="question 不能为空")
+    if not 1 <= req.max_iters <= 10:
+        raise HTTPException(status_code=400, detail="max_iters 需在 1-10 之间")
+    try:
+        import time
+        from ..agent.loop import agent_ask
+        t0 = time.time()
+        res = agent_ask(req.question.strip(), load(), max_iters=req.max_iters,
+                        corrective=req.corrective)
+        return {**res, "elapsed_s": round(time.time() - t0, 1)}
+    except Exception as e:
+        log.exception("agent 失败")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -111,6 +111,27 @@ API 冒烟与延迟测试（进程内，无需先启动服务）：
 python -X utf8 scripts/api_smoke.py
 ```
 
+## 阶段五：工具调用型 Agent（Agentic RAG）
+
+把检索能力封装为 LLM 可调用的工具，由模型自主决定何时调用哪个工具（单轮多步，最多 6 轮）。
+
+```bash
+python -X utf8 run_all.py agent ask --question "对比两面针和一心堂2022年的盈利能力并解释差异原因" --verbose
+python -X utf8 run_all.py agent eval              # CFQA 分层抽样 80 题 + 10 条手写多步任务
+```
+
+| 工具 | 能力 |
+|------|------|
+| `search_report` | 全文混合检索 + 带页码引用生成 |
+| `get_metric` | 结构化指标点查（含出处） |
+| `compare_companies` | 2–3 家公司同报告期对比 |
+| `explain_metric` | 指标知识库解释（22 个指标） |
+| `verify_numbers` | 数值核验（容差 0.5%） |
+
+实现：手写 function-calling 循环（requests 直连 DeepSeek tools 参数，不引入 Agent 框架）——
+[src/agent/tools.py](src/agent/tools.py) 工具 schema 与实现、[src/agent/loop.py](src/agent/loop.py) 循环与 trace、
+[src/agent/eval.py](src/agent/eval.py) 评估。`--verbose` 打印每步工具调用与耗时。
+
 ## 结构化指标的三条来源
 
 按「不用 PDF 硬提表格」原则，结构化指标以 API 为主：

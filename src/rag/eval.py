@@ -24,12 +24,19 @@ _TOL = 0.01  # 数值判分容差 1%
 
 def _gold_numbers(answer: str) -> list[float]:
     out = []
-    for t in re.findall(r"[-−－]?[\d,，]{2,}(?:\.\d+)?%?", answer):
+    # 允许首位数字后直接接小数点（如「1.48亿元」），否则「1.48」会被误切成「48」
+    for t in re.findall(r"[-−－]?[\d,，]+(?:\.\d+)?%?", answer):
         t = t.strip("，,、 ")
-        if not t or re.match(r"^(?:19|20)\d\d$", t):
+        if not t:
+            continue
+        core = t.lstrip("-−－").rstrip("%")
+        if re.match(r"^(?:19|20)\d\d$", core):
+            continue
+        # 至少 2 位有效数字，排除「1」「2」这类单位/编号噪声，保留 1.48
+        if len(re.sub(r"[^\d]", "", core)) < 2:
             continue
         try:
-            out.append(float(t.replace(",", "").replace("，", "").rstrip("%")))
+            out.append(float(core.replace(",", "").replace("，", "")))
         except ValueError:
             continue
     return out
@@ -46,8 +53,9 @@ def _numeric_match(pred: str, gold: str) -> bool:
     if not gn:
         return None  # 非数值题
     for g in gn:
+        # 单位跨度到「亿元↔元」= 10^8，故 k 取 -9..9
         hit = any(abs(p * (10 ** k) - g) <= abs(g) * _TOL
-                  for p in pn for k in range(-6, 7))
+                  for p in pn for k in range(-9, 10))
         if not hit:
             return False
     return True

@@ -94,3 +94,33 @@ def chat(messages: list[dict], temperature: float = 0.1, max_tokens: int = 1024,
                 raise RuntimeError(f"chat 失败({attempt}次): {e}")
             time.sleep(2 ** attempt)
     return ""
+
+
+def chat_tools(messages: list[dict], tools: list[dict] | None = None,
+               temperature: float = 0.1, max_tokens: int = 1500,
+               retries: int = 3) -> dict:
+    """DeepSeek function calling：返回完整 message（content 可能为 None，但 tool_calls 非空）。
+
+    tools 为空时退化为普通对话（用于强制总结的最后一轮）。
+    """
+    import requests
+    key = load_env().get("DEEPSEEK_API_KEY", "")
+    payload: dict = {"model": DEEPSEEK_MODEL, "messages": messages,
+                     "temperature": temperature, "max_tokens": max_tokens}
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.post(
+                DEEPSEEK_BASE + "/chat/completions",
+                headers={"Authorization": f"Bearer {key}"},
+                json=payload, timeout=120,
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]
+        except Exception as e:
+            if attempt == retries:
+                raise RuntimeError(f"chat_tools 失败({attempt}次): {e}")
+            time.sleep(2 ** attempt)
+    return {}

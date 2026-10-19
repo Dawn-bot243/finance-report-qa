@@ -87,6 +87,24 @@ def cmd_rag(cfg, args):
         raise SystemExit("rag 子命令: build|ask|eval")
 
 
+def cmd_agent(cfg, args):
+    """Agent 子命令：ask|eval（LLM 自主调用工具）"""
+    from src.agent.loop import agent_ask, print_agent_answer
+    from src.agent.eval import run_agent_eval
+    if args.subcmd == "ask":
+        if not args.question:
+            raise SystemExit("agent ask 需要 --question")
+        print_answer_result = agent_ask(args.question, cfg,
+                                        max_iters=args.agent_max_iters,
+                                        verbose=args.verbose)
+        print_agent_answer(print_answer_result)
+    elif args.subcmd == "eval":
+        run_agent_eval(cfg, limit=args.eval_limit, skip_judge=args.skip_judge,
+                       max_iters=args.agent_max_iters)
+    else:
+        raise SystemExit("agent 子命令: ask|eval")
+
+
 def cmd_serve(cfg, args):
     """启动 FastAPI 后端（uvicorn）。"""
     import uvicorn
@@ -146,7 +164,7 @@ def cmd_analysis(cfg, args):
 def main():
     parser = argparse.ArgumentParser(description="财报库阶段一流水线")
     parser.add_argument("step", choices=["init", "cfqa", "download", "text", "apis", "metrics", "qc",
-                                         "rag", "analysis", "serve", "all"])
+                                         "rag", "analysis", "agent", "serve", "all"])
     parser.add_argument("subcmd", nargs="?", help="[rag] build|ask|eval；[analysis] compare|kb|verify")
     parser.add_argument("--force", action="store_true", help="强制重跑（覆盖已有结果）")
     parser.add_argument("--only", help="只处理指定股票代码")
@@ -160,6 +178,8 @@ def main():
     parser.add_argument("--year", type=int, help="[analysis compare] 报告期年份")
     parser.add_argument("--metrics", help="[analysis compare] 指标 key，逗号分隔（默认核心15项）")
     parser.add_argument("--text", help="[analysis verify] 待核验文本")
+    parser.add_argument("--agent-max-iters", type=int, default=6,
+                        help="[agent] 最大工具调用轮数")
     parser.add_argument("--host", default="127.0.0.1", help="[serve] 监听地址")
     parser.add_argument("--port", type=int, default=8000, help="[serve] 端口")
     args = parser.parse_args()
@@ -172,7 +192,7 @@ def main():
         {"init": cmd_init, "cfqa": cmd_cfqa, "download": cmd_download,
          "text": cmd_text, "apis": cmd_apis, "metrics": cmd_metrics,
          "qc": cmd_qc, "rag": cmd_rag, "analysis": cmd_analysis,
-         "serve": cmd_serve}[s](cfg, args)
+         "agent": cmd_agent, "serve": cmd_serve}[s](cfg, args)
         log.info("<<< 步骤 %s 结束", s)
     return 0
 

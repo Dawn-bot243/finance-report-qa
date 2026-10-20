@@ -53,13 +53,15 @@ python -X utf8 run_all.py all        # 顺序执行全部
 ## 阶段二：RAG 检索问答（混合检索 + 带出处回答）
 
 ```bash
-python -X utf8 run_all.py rag build                 # 建索引：pages→chunks + Chroma 向量 + BM25（幂等增量）
+python -X utf8 run_all.py rag build                 # 建索引：pages→语义子块 + numpy 向量 + BM25（幂等增量）
 python -X utf8 run_all.py rag ask --question "两面针2019年营业收入是多少"
 python -X utf8 run_all.py rag eval                  # CFQA 全量评估（检索命中率+数值判分+LLM判分）
 python -X utf8 run_all.py rag eval --eval-limit 20 --skip-judge   # 快速小样本评估
 ```
 
-问答链路：**查询分析（公司/年份/指标）→ 结构化直答（metrics 表，as_reported 优先）→ 混合召回（Chroma bge-m3 + jieba BM25 → RRF）→ bge-reranker 重排 → DeepSeek 生成（行内引用【第N页】+ 数值核验）**。证据不足时拒答。
+问答链路：**查询分析（公司/年份/指标）→ 结构化直答（metrics 表，as_reported 优先）→ 混合召回（bge-m3 + jieba BM25，子块级检索）→ RRF → bge-reranker 重排（父页文本）→ DeepSeek 生成（行内引用【第N页】+ 数值核验）**。证据不足时拒答。
+
+索引为**父子块结构**：9,810 个页面按标题/段落/表格切分为 **36,583 个语义子块**用于检索（更聚焦），命中后回溯到整页作为生成上下文（保留【第N页】引用）。多查询检索（Multi-Query）可选：LLM 生成 3 个改写查询，与原查询做加权 RRF 融合（原查询权重 1.0、改写 0.5）。
 
 API 依赖（.env）：`DEEPSEEK_API_KEY`（生成/评测）、`SILICONFLOW_API_KEY`（bge-m3 嵌入 + bge-reranker 重排）、`DATASINK_API_KEY`（阶段一用）。
 

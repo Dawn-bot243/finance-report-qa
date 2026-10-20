@@ -82,7 +82,8 @@ def cmd_rag(cfg, args):
             raise SystemExit("ask 需要 --question")
         print_answer(rag_ask(args.question, cfg, verbose=args.verbose))
     elif args.subcmd == "eval":
-        run_eval(cfg, limit=args.eval_limit, skip_judge=args.skip_judge)
+        run_eval(cfg, limit=args.eval_limit, skip_judge=args.skip_judge,
+                 judge_rounds=args.judge_rounds)
     else:
         raise SystemExit("rag 子命令: build|ask|eval")
 
@@ -100,7 +101,8 @@ def cmd_agent(cfg, args):
         print_agent_answer(print_answer_result)
     elif args.subcmd == "eval":
         run_agent_eval(cfg, limit=args.eval_limit, skip_judge=args.skip_judge,
-                       max_iters=args.agent_max_iters)
+                       max_iters=args.agent_max_iters,
+                       judge_rounds=args.judge_rounds)
     elif args.subcmd == "debate":
         from src.agent.debate import debate, print_debate
         if not args.company or not args.year:
@@ -180,6 +182,8 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="[rag ask] 打印检索详情")
     parser.add_argument("--eval-limit", type=int, help="[rag eval] 只评估前 N 题")
     parser.add_argument("--skip-judge", action="store_true", help="[rag eval] 跳过 LLM 判分")
+    parser.add_argument("--judge-rounds", type=int, default=3,
+                        help="[rag/agent eval] LLM 判分轮数（多轮取多数，默认 3）")
     parser.add_argument("--codes", help="[analysis compare] 股票代码，逗号分隔（2-3 家）")
     parser.add_argument("--year", type=int, help="[analysis compare] 报告期年份")
     parser.add_argument("--metrics", help="[analysis compare] 指标 key，逗号分隔（默认核心15项）")

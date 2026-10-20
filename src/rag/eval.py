@@ -61,8 +61,8 @@ def _numeric_match(pred: str, gold: str) -> bool:
     return True
 
 
-def _llm_judge(question: str, gold: str, pred: str) -> int:
-    """DeepSeek 判分：生成答案与标准答案是否一致。1=一致 0=不一致。"""
+def _llm_judge_once(question: str, gold: str, pred: str) -> int:
+    """单次 DeepSeek 判分：生成答案与标准答案是否实质一致。1=一致 0=不一致。"""
     prompt = (
         "你是财报问答评测员。判断【生成答案】是否与【标准答案】实质一致"
         "（关键事实和数字相符即为一致，措辞不同不影响）。"
@@ -76,6 +76,18 @@ def _llm_judge(question: str, gold: str, pred: str) -> int:
     except Exception as e:
         log.warning("judge 失败: %s", e)
         return 0
+
+
+def _llm_judge(question: str, gold: str, pred: str, rounds: int = 3) -> int:
+    """多轮判分取多数（默认 3 轮），降低单次 judge 的方差。
+
+    rounds=1 时退化为单次判分。temperature=0 下多次调用仍有细微差异，
+    多数投票能把偶发的判分抖动压下去。
+    """
+    if rounds <= 1:
+        return _llm_judge_once(question, gold, pred)
+    votes = [_llm_judge_once(question, gold, pred) for _ in range(rounds)]
+    return 1 if sum(votes) > rounds / 2 else 0
 
 
 def _retrieval_hit(question_id: int, top_chunks: list[dict], conn: sqlite3.Connection,
@@ -96,7 +108,8 @@ def _retrieval_hit(question_id: int, top_chunks: list[dict], conn: sqlite3.Conne
     return False
 
 
-def run_eval(cfg: Config, limit: int | None = None, skip_judge: bool = False) -> dict:
+def run_eval(cfg: Config, limit: int | None = None, skip_judge: bool = False,
+             judge_rounds: int = 3) -> dict:
     conn = sqlite3.connect(paths.db_path())
     conn.row_factory = sqlite3.Row
     codes = ",".join("?" * len(cfg.companies))
@@ -156,14 +169,14 @@ def run_eval(cfg: Config, limit: int | None = None, skip_judge: bool = False) ->
                 stats["text_total"] += 1
                 b["text_n"] += 1
                 if not skip_judge:
-                    ok = _llm_judge(question, q["answer"], pred)
+                    ok = _llm_judge(question, q["answer"], pred, rounds=judge_rounds)
                     stats["text_correct"] += 1 if ok else 0
                     b["text_c"] += 1 if ok else 0
         else:
             stats["text_total"] += 1
             b["text_n"] += 1
             if not skip_judge:
-                ok = _llm_judge(question, q["answer"], pred)
+                ok = _llm_judge(question, q["answer"], pred, rounds=judge_rounds)
                 stats["text_correct"] += 1 if ok else 0
                 b["text_c"] += 1 if ok else 0
             elif _numeric_match(pred, q["answer"]) is False:

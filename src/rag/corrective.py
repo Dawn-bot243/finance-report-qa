@@ -108,8 +108,9 @@ def rewrite(question: str, chunks: list[RetrievedChunk], reason: str) -> str:
 
 
 def retrieve_corrective(question: str, cfg: Config, top_k: int = 5,
-                        max_rewrites: int = 2) -> dict:
-    """自校正检索循环。
+                        max_rewrites: int = 2, multi_query: bool = False,
+                        n_queries: int = 3) -> dict:
+    """自校正检索循环（可选多查询检索）。
 
     返回 {chunks, query, rounds, rewrites:[{from,to,reason}], sufficient, assessment}
     """
@@ -117,9 +118,14 @@ def retrieve_corrective(question: str, cfg: Config, top_k: int = 5,
     rewrite_log: list[dict] = []
     chunks: list[RetrievedChunk] = []
     verdict = {"sufficient": False, "reason": "", "mode": ""}
+    extra_queries: list[str] = []
+    if multi_query:
+        from .retriever import generate_queries
+        extra_queries = generate_queries(question, n=n_queries)
 
     for rnd in range(max_rewrites + 1):
-        chunks = retrieve(query, cfg, top_k=top_k)
+        chunks = retrieve(query, cfg, top_k=top_k,
+                          queries=extra_queries if rnd == 0 else None)
         verdict = assess(question, chunks)
         if verdict["sufficient"]:
             return {"chunks": chunks, "query": query, "rounds": rnd + 1,

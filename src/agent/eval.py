@@ -60,14 +60,15 @@ def _is_refusal(text: str) -> bool:
     return "证据不足" in text or "未披露" in text
 
 
-def _judge_answer(q: dict, pred: str, skip_judge: bool) -> tuple[bool | None, str]:
-    """返回 (是否正确, 判分类型)。数值题自动判分，文本题 LLM 判分。"""
+def _judge_answer(q: dict, pred: str, skip_judge: bool,
+                  judge_rounds: int = 3) -> tuple[bool | None, str]:
+    """返回 (是否正确, 判分类型)。数值题自动判分，文本题 LLM 多轮判分取多数。"""
     nm = _numeric_match(pred, q["answer"])
     if nm is not None:
         return nm, "numeric"
     if skip_judge:
         return None, "text_skipped"
-    return bool(_llm_judge(q["question"], q["answer"], pred)), "text"
+    return bool(_llm_judge(q["question"], q["answer"], pred, rounds=judge_rounds)), "text"
 
 
 def _tool_stats(trace: list[dict]) -> dict:
@@ -77,7 +78,8 @@ def _tool_stats(trace: list[dict]) -> dict:
 
 
 def run_agent_eval(cfg: Config, limit: int | None = None, skip_judge: bool = False,
-                   max_iters: int = 6, per_company: int = 8) -> dict:
+                   max_iters: int = 6, per_company: int = 8,
+                   judge_rounds: int = 3) -> dict:
     conn = sqlite3.connect(paths.db_path())
     conn.row_factory = sqlite3.Row
     qs = _sample_questions(conn, cfg, per_company=per_company)
@@ -121,7 +123,7 @@ def run_agent_eval(cfg: Config, limit: int | None = None, skip_judge: bool = Fal
             stats["refused"] += 1
             b["refused"] += 1
 
-        ok, kind = _judge_answer(q, pred, skip_judge)
+        ok, kind = _judge_answer(q, pred, skip_judge, judge_rounds=judge_rounds)
         if kind == "numeric":
             stats["numeric_total"] += 1
             stats["numeric_correct"] += int(bool(ok))
@@ -155,7 +157,7 @@ def run_agent_eval(cfg: Config, limit: int | None = None, skip_judge: bool = Fal
         route_score = len(hit) / len(t["expected_tools"])
         judge = None if skip_judge else _llm_judge(
             t["question"], "应使用工具：" + "、".join(t["expected_tools"]),
-            (r["answer"] or "")[:500])
+            (r["answer"] or "")[:500], rounds=judge_rounds)
         multi.append({"id": t["id"], "question": t["question"], "tools": tools_used,
                       "expected": t["expected_tools"], "route_score": round(route_score, 2),
                       "judge": judge, "iterations": r["iterations"],

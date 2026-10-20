@@ -49,8 +49,8 @@ def _system_prompt(cfg: Config) -> str:
 
 def run_tool_loop(messages: list[dict], cfg: Config, tools: list[dict] | None = None,
                   max_iters: int = 6, verbose: bool = False,
-                  corrective: bool = True, label: str = "agent",
-                  max_tokens: int = 1500) -> dict:
+                  corrective: bool = True, multi_query: bool = False,
+                  label: str = "agent", max_tokens: int = 1500) -> dict:
     """在给定消息历史上跑工具调用循环（会就地追加 messages）。
 
     供 agent_ask（单 Agent 问答）与 debate（多智能体辩论）复用。
@@ -58,7 +58,8 @@ def run_tool_loop(messages: list[dict], cfg: Config, tools: list[dict] | None = 
     """
     conn = sqlite3.connect(paths.db_path())
     conn.row_factory = sqlite3.Row
-    ctx = {"conn": conn, "cfg": cfg, "corrective": corrective}
+    ctx = {"conn": conn, "cfg": cfg, "corrective": corrective,
+           "multi_query": multi_query}
     tools = tools if tools is not None else build_tools(cfg)
     trace: list[dict] = []
     seen: set[str] = set()
@@ -132,7 +133,8 @@ def run_tool_loop(messages: list[dict], cfg: Config, tools: list[dict] | None = 
 
 
 def agent_ask(question: str, cfg: Config | None = None, max_iters: int = 6,
-              verbose: bool = False, corrective: bool = True) -> dict:
+              verbose: bool = False, corrective: bool = True,
+              multi_query: bool = False) -> dict:
     """运行一次 Agent 问答。返回 {answer, trace, iterations, forced}。
 
     corrective=False 时 search_report 退回单次检索（用于对照评估）。
@@ -143,7 +145,8 @@ def agent_ask(question: str, cfg: Config | None = None, max_iters: int = 6,
         {"role": "user", "content": question},
     ]
     return run_tool_loop(messages, cfg, build_tools(cfg), max_iters=max_iters,
-                         verbose=verbose, corrective=corrective, label="agent")
+                         verbose=verbose, corrective=corrective,
+                         multi_query=multi_query, label="agent")
 
 
 def print_agent_answer(result: dict) -> None:

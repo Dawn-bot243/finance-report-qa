@@ -142,8 +142,9 @@ def _tool_search_report(ctx: dict, args: dict) -> str:
         from ..rag.retriever import retrieve
         gen = generate(question, retrieve(question, ctx["cfg"], top_k=5))
         return gen["answer"]
-    # 自校正检索：证据不足时先重写查询重检索，最多 2 轮；仍不足则拒答而非硬生成
-    res = retrieve_corrective(question, ctx["cfg"], top_k=5, max_rewrites=2)
+    # 自校正检索（可选多查询）：证据不足时先重写查询重检索，最多 2 轮；仍不足则拒答
+    res = retrieve_corrective(question, ctx["cfg"], top_k=5, max_rewrites=2,
+                              multi_query=ctx.get("multi_query", False))
     if not res["sufficient"]:
         detail = "；".join(f"「{r['from'][:30]}」→「{r['to'][:30]}」"
                            for r in res["rewrites"]) or "无重写"
